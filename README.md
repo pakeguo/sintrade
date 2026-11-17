@@ -93,6 +93,7 @@ npm run demo
 ## 疑難排解
 
 - **畫面只有白底文字、沒有顏色、時鐘停在 `--:--:--`**：代表 JS/CSS 沒載入。請 `git pull` 取得最新版，再重新執行 `npm run deploy`（現在會打包成單一 `index.html`，沒有子目錄路徑問題），然後在瀏覽器按 `Ctrl+F5` 強制重新整理。
+- **`'shioaji' 不是內部或外部命令`**：不影響部署，`npm run deploy` 直接用 Windows 內建的 `curl` 呼叫 server 的上傳 API，只要 server 有在執行就好。要刪除已上傳的 App 用 `npm run undeploy`。
 - **右上角一直顯示 DEMO**：前端連不到 `/api/v1/info`，確認 `shioaji server start` 有在執行。
 - 其他問題：按 `F12` → Console 分頁，把紅色錯誤訊息截圖。
 
