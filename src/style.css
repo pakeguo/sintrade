@@ -141,6 +141,8 @@ table.chain { width: 100%; border-collapse: collapse; }
 .chain tr.fline td.fk {
   text-align: center; font-size: 12px; font-weight: 700; color: #1a1405; background: var(--accent);
 }
+.empty.msg { white-space: normal; line-height: 1.8; word-break: break-all; }
+.empty.msg small { color: var(--muted); opacity: .8; }
 .empty { text-align: center !important; color: var(--muted); padding: 40px !important; }
 .legend {
   display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 12px; color: var(--muted); font-size: 12px;

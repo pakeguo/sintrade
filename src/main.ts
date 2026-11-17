@@ -169,7 +169,10 @@ async function loadExpiries() {
   const roots = await be.optionRoots();
   // 臺指選擇權家族：月選 TXO + 各週選（名稱為「臺指選擇權…」或 TX1–TX5）
   const fam = roots.filter((r) => r.root === 'TXO' || /^TX[1-5]$/.test(r.root) || r.name.startsWith('臺指選擇權'));
-  const lists = await Promise.all(fam.map((r) => be.optionChain(r.root).catch(() => [] as OptContract[])));
+  const lists = await Promise.all(fam.map((r) => be.optionChain(r.root).catch((e) => {
+    if (r.root === 'TXO') throw e; // 月選都拿不到，代表 server 還沒就緒 → 交給 retry
+    return [] as OptContract[];
+  })));
   const today = tpeToday();
   const tpe = new Date(Date.now() + 8 * 3600_000);
   const afterClose = tpe.getUTCHours() * 60 + tpe.getUTCMinutes() > 13 * 60 + 45;
@@ -577,6 +580,33 @@ async function pickBackend(): Promise<void> {
   env = 'demo';
 }
 
+function showMsg(html: string) {
+  $('chain-body').innerHTML = `<tr><td colspan="11" class="empty msg">${html}</td></tr>`;
+}
+
+function errText(e: unknown) {
+  const s = String((e as Error)?.message ?? e);
+  return s.length > 240 ? s.slice(0, 240) + '…' : s;
+}
+
+/** shioaji server 剛啟動、或與永豐主機連線暫時中斷（NotReady）時，會回 500；自動重試直到成功 */
+async function retry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  let delay = 2000;
+  for (let n = 1; ; n++) {
+    try {
+      return await fn();
+    } catch (e) {
+      console.warn(label, e);
+      const notReady = /NotReady|transient|transport|503|500/i.test(String((e as Error)?.message ?? e));
+      showMsg(`<b>${label}失敗，${Math.round(delay / 1000)} 秒後自動重試（第 ${n} 次）</b><br>
+        ${notReady ? 'shioaji server 與永豐主機的連線尚未就緒，通常等一下就會恢復。<br>若持續失敗，請重新啟動 shioaji server（模擬環境深夜或維護時段也可能暫停服務）。<br>' : ''}
+        <small>${errText(e).replace(/</g, '&lt;')}</small>`);
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 1.5, 30_000);
+    }
+  }
+}
+
 async function boot() {
   $('range').querySelector<HTMLSelectElement>('select')!.value = String(range);
   await pickBackend();
@@ -588,7 +618,7 @@ async function boot() {
   // 現貨指數與台指期
   const ix = await be.resolve('IX0001', 'IND').catch(() => ({ security_type: 'IND', exchange: 'TSE', code: 'IX0001' } as Contract));
   be.subscribe(ix, 'Quote').catch(() => undefined);
-  fut = await be.resolve('TXFR1', 'FUT');
+  fut = await retry('查詢台指期商品檔', () => be.resolve('TXFR1', 'FUT'));
   futKey = keyOf(fut);
   const [snapIx] = await be.snapshots([ix]).catch(() => []);
   if (snapIx && !idx) {
@@ -599,7 +629,11 @@ async function boot() {
   be.subscribe(fut, 'Tick').catch(() => undefined);
   be.subscribe(fut, 'BidAsk').catch(() => undefined);
 
-  await loadExpiries();
+  showMsg('載入選擇權商品檔…');
+  await retry('載入臺指選擇權商品檔', async () => {
+    await loadExpiries();
+    if (!expiries.length) throw new Error('找不到任何未到期的臺指選擇權合約（商品檔可能尚未載入完成）');
+  });
   renderExpiries();
   if (cur) await selectExpiry(cur);
   select(fut, '台指期 近月');
@@ -642,5 +676,5 @@ setInterval(clock, 1000);
 clock();
 boot().catch((e) => {
   console.error(e);
-  $('chain-body').innerHTML = `<tr><td colspan="11" class="empty">啟動失敗：${String(e.message ?? e)}</td></tr>`;
+  showMsg(`啟動失敗：${errText(e).replace(/</g, '&lt;')}`);
 });
