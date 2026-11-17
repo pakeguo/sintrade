@@ -202,9 +202,11 @@ async function loadSnapshots(list: Contract[]) {
   try {
     const snaps = await be.snapshots(list);
     for (const s of snaps) {
-      const x = q(s.code);
+      // 連續月（TXFR1）的快照回傳 TXFR1，即時 tick 則用實際月份代碼 → 統一存到 futKey
+      const x = q(fut && (s.code === fut.code || s.code === futKey) ? futKey : s.code);
       if (fin(s.close) && s.close > 0) x.last = s.close;
-      x.ref = s.close - s.change_price;
+      const r = s.close - s.change_price;
+      if (fin(r) && r > 0) x.ref = r;
       x.vol = Math.max(x.vol, s.total_volume || 0);
       x.high = s.high; x.low = s.low;
     }
@@ -302,8 +304,8 @@ function renderCards(m: Metrics) {
     const ch = idx.close - idx.reference;
     card('c-idx', '加權指數', fmt(idx.close, 2),
       `<span class="${cls(ch)}">${sign(ch, 2)}　${sign((ch / idx.reference) * 100, 2)}%</span>
-       <div class="breadth"><span class="up">▲${fmt(idx.raise + idx.raiseStop)}</span>
-       <span class="flat">${fmt(idx.flat)}</span><span class="down">▼${fmt(idx.fall + idx.fallStop)}</span></div>`,
+       ${fin(idx.raise) ? `<div class="breadth"><span class="up">▲${fmt(idx.raise + idx.raiseStop)}</span>
+       <span class="flat">${fmt(idx.flat)}</span><span class="down">▼${fmt(idx.fall + idx.fallStop)}</span></div>` : ''}`,
       cls(ch));
   }
   // 2. 台指期
@@ -311,10 +313,13 @@ function renderCards(m: Metrics) {
   if (f) {
     const ch = f.last - f.ref;
     const basis = idx ? f.last - idx.close : NaN;
+    const basisHtml = session() === 'day'
+      ? `基差 <b class="${cls(basis)}">${sign(basis, 1)}</b> ${fin(basis) ? (basis >= 0 ? '正價差' : '逆價差') : ''}`
+      : `較現貨收盤 <b class="${cls(basis)}">${sign(basis, 0)}</b>`;
     card('c-fut', '台指期 近月', fmt(f.last),
       `<span class="${cls(ch)}">${sign(ch)}　${sign((ch / f.ref) * 100, 2)}%</span>
-       <div>基差 <b class="${cls(basis)}">${sign(basis, 1)}</b> ${fin(basis) ? (basis >= 0 ? '正價差' : '逆價差') : ''}</div>`,
-      cls(ch), '基差 = 期貨 − 現貨。正價差代表市場偏樂觀，逆價差偏保守（也受除息影響）。');
+       <div>${basisHtml}</div>`,
+      cls(ch), '日盤：基差 = 期貨 − 現貨，正價差偏樂觀、逆價差偏保守（也受除息影響）。夜盤時現貨已收盤，改顯示期貨相對現貨收盤價的變動。');
   }
   // 3. 到期
   if (cur) {
@@ -548,13 +553,20 @@ function frame() {
   setTimeout(() => requestAnimationFrame(frame), 200);
 }
 
+function session(): 'day' | 'night' | 'closed' {
+  const t = new Date(Date.now() + 8 * 3600_000);
+  const mins = t.getUTCHours() * 60 + t.getUTCMinutes();
+  const wd = t.getUTCDay();
+  if (wd >= 1 && wd <= 5 && mins >= 8 * 60 + 45 && mins < 13 * 60 + 45) return 'day';
+  if ((wd >= 1 && wd <= 5 && mins >= 15 * 60) || (wd >= 2 && wd <= 6 && mins < 5 * 60)) return 'night';
+  return 'closed';
+}
+
 function clock() {
   const t = new Date(Date.now() + 8 * 3600_000);
   $('clock').textContent = t.toISOString().slice(11, 19);
-  const mins = t.getUTCHours() * 60 + t.getUTCMinutes();
-  const wd = t.getUTCDay();
-  const day = wd >= 1 && wd <= 5 && mins >= 8 * 60 + 45 && mins < 13 * 60 + 45;
-  const night = (wd >= 1 && wd <= 5 && mins >= 15 * 60) || (wd >= 2 && wd <= 6 && mins < 5 * 60);
+  const s = session();
+  const day = s === 'day', night = s === 'night';
   $('session').textContent = day ? '日盤交易中' : night ? '夜盤交易中' : '休市';
   $('session').className = 'session' + (day || night ? ' open' : '');
 }
@@ -620,6 +632,10 @@ async function boot() {
   be.subscribe(ix, 'Quote').catch(() => undefined);
   fut = await retry('查詢台指期商品檔', () => be.resolve('TXFR1', 'FUT'));
   futKey = keyOf(fut);
+  be.contractInfo(fut).then((info) => {
+    const x = q(futKey);
+    if (!fin(x.ref) && fin(info.reference) && info.reference > 0) { x.ref = info.reference; dirty = true; }
+  }).catch(() => undefined);
   const [snapIx] = await be.snapshots([ix]).catch(() => []);
   if (snapIx && !idx) {
     idx = { code: 'IX0001', t: 0, close: snapIx.close, reference: snapIx.close - snapIx.change_price, open: snapIx.open,

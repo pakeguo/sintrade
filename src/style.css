@@ -100,7 +100,7 @@ main {
 }
 .chain-wrap {
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-  overflow: auto; max-height: calc(100vh - 230px); display: flex; flex-direction: column;
+  overflow-y: auto; overflow-x: hidden; max-height: calc(100vh - 230px); display: flex; flex-direction: column;
 }
 table.chain { width: 100%; border-collapse: collapse; }
 .chain th {
@@ -109,7 +109,7 @@ table.chain { width: 100%; border-collapse: collapse; }
 }
 .chain tr.sidehead th { top: 0; font-size: 13px; font-weight: 700; }
 .chain thead tr:nth-child(2) th { top: 27px; border-bottom: 1px solid var(--line); }
-.chain td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.chain td { padding: 3px 5px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 .chain td[data-itm] { background: var(--itm); }
 .chain tr.band td { background-image: linear-gradient(var(--band), var(--band)); }
 .chain tr.atm td { background: var(--atm); }
@@ -129,7 +129,7 @@ table.chain { width: 100%; border-collapse: collapse; }
 .chain td.px.fu { background: rgba(240, 82, 79, .28) !important; }
 .chain td.px.fd { background: rgba(34, 176, 125, .28) !important; }
 .chain td[data-side="P"] { text-align: left; }
-.chain td.vol { position: relative; width: 17%; min-width: 90px; }
+.chain td.vol { position: relative; width: 15%; min-width: 72px; }
 .chain td.vol i { position: absolute; top: 3px; bottom: 3px; border-radius: 3px; opacity: .55; }
 .chain td.vol.C i { right: 4px; background: var(--up); }
 .chain td.vol.P i { left: 4px; background: var(--down); }
