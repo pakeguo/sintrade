@@ -1,0 +1,19 @@
+{
+  "name": "my-shioaji-watch",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "demo": "vite --open /?demo=1",
+    "build": "tsc --noEmit && vite build",
+    "deploy": "vite build --base=/apps/mywatch/ && shioaji apps upload --name mywatch --dir dist"
+  },
+  "dependencies": {
+    "lightweight-charts": "5.0.8"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3",
+    "vite": "6.3.5"
+  }
+}
