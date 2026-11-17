@@ -7,13 +7,14 @@
     "dev": "vite",
     "demo": "vite --open /?demo=1",
     "build": "tsc --noEmit && vite build",
-    "deploy": "vite build --base=/apps/mywatch/ && shioaji apps upload --name mywatch --dir dist"
+    "deploy": "tsc --noEmit && vite build && shioaji apps upload --name mywatch --file dist/index.html"
   },
   "dependencies": {
     "lightweight-charts": "5.0.8"
   },
   "devDependencies": {
     "typescript": "5.8.3",
-    "vite": "6.3.5"
+    "vite": "6.3.5",
+    "vite-plugin-singlefile": "^2.2.0"
   }
 }
