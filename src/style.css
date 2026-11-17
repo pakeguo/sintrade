@@ -182,10 +182,44 @@ table.chain { width: 100%; border-collapse: collapse; }
   .chain-wrap, .detail { max-height: none; }
 }
 @media (max-width: 1000px) {
-  main { grid-template-columns: 1fr; }
-  .chain td.iv, .chain td.dl, .chain th:nth-child(2), .chain th:nth-child(3), .chain th:nth-child(9), .chain th:nth-child(10) { display: none; }
+  /* 單欄時改成自然高度、整頁捲動，避免報價表被壓扁 */
+  main { grid-template-columns: 1fr; flex: none; min-height: auto; }
+  .chain-wrap { display: block; }
+  .detail { overflow: visible; }
+  .chain td.iv, .chain td.dl,
+  .chain thead tr:nth-child(2) th:nth-child(2), .chain thead tr:nth-child(2) th:nth-child(3),
+  .chain thead tr:nth-child(2) th:nth-child(9), .chain thead tr:nth-child(2) th:nth-child(10) { display: none; }
+  .chain-wrap, .detail { max-height: none; }
 }
 @media (max-width: 640px) {
-  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  header { flex-wrap: wrap; }
+  body { font-size: 12px; }
+  header { flex-wrap: wrap; gap: 6px 8px; padding: 8px 10px; }
+  .brand { font-size: 15px; width: 100%; margin-right: 0; }
+  .clock { margin-left: auto; font-size: 14px; }
+  .banner { padding: 8px 10px; font-size: 12px; }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 8px 10px 0; }
+  .card { min-height: 0; padding: 6px 10px; border-radius: 8px; }
+  .cm { font-size: 19px; }
+  .wl { font-size: 16px; }
+  .bar { padding: 8px 10px; gap: 8px; }
+  .expiries { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; scrollbar-width: none; }
+  .expiries::-webkit-scrollbar { display: none; }
+  .chip { flex: none; padding: 4px 10px; }
+  .tools { width: 100%; justify-content: flex-end; }
+  main { padding: 0 6px 10px; gap: 8px; }
+  .chain-wrap { border-radius: 8px; }
+  .chain th { padding: 4px 2px; font-size: 11px; }
+  .chain thead tr:nth-child(2) th { top: 24px; }
+  .chain tr.sidehead th { font-size: 12px; }
+  .chain td { padding: 4px 3px; }
+  .chain td.px { font-size: 13px; min-width: 44px; }
+  .chain td.chg { font-size: 11px; }
+  .chain td.k { font-size: 13px; min-width: 58px; }
+  .chain td.k em { display: none; }
+  .chain td.vol { min-width: 44px; width: auto; }
+  .chain td.vol span { font-size: 11px; }
+  .legend { gap: 8px 12px; padding: 6px 10px; font-size: 11px; }
+  .legend .kbd { display: none; }
+  .detail { border-radius: 8px; padding: 10px; }
+  .dp { font-size: 26px; }
 }

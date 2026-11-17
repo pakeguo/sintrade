@@ -409,8 +409,10 @@ function renderChain(m: Metrics) {
   body.innerHTML = html;
 }
 
-const fline = (F: number) =>
-  `<tr class="fline"><td colspan="5"></td><td class="fk">◆ ${fmt(F, 1)}</td><td colspan="5"></td></tr>`;
+const fline = (F: number) => {
+  const n = compactMq.matches ? 3 : 5;
+  return `<tr class="fline"><td colspan="${n}"></td><td class="fk">◆ ${fmt(F, 1)}</td><td colspan="${n}"></td></tr>`;
+};
 
 function renderExpiries() {
   $('expiries').innerHTML = expiries.map((e) => {
@@ -670,7 +672,11 @@ $('chain-body').addEventListener('click', (ev) => {
     `td.px[data-side="${(ev.target as HTMLElement).closest<HTMLElement>('td')?.dataset.side ?? 'C'}"]`);
   const code = td?.dataset.code;
   const o = cur?.list.find((x) => x.code === code);
-  if (o) select(o, `${o.right === 'C' ? '買權 Call' : '賣權 Put'} ${fmt(o.strike)}　${cur!.label} ${cur!.kind}`);
+  if (o) {
+    select(o, `${o.right === 'C' ? '買權 Call' : '賣權 Put'} ${fmt(o.strike)}　${cur!.label} ${cur!.kind}`);
+    // 手機上明細在報價表下方，點了之後自動捲過去
+    if (compactMq.matches) setTimeout(() => document.querySelector('.detail')?.scrollIntoView({ behavior: 'smooth' }), 50);
+  }
 });
 $('fut-btn').addEventListener('click', () => fut && select(fut, '台指期 近月'));
 $('center-btn').addEventListener('click', () => recenter(true));
@@ -687,6 +693,16 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'c' || ev.key === 'C') recenter(true);
   if (ev.key === 'f' || ev.key === 'F') fut && select(fut, '台指期 近月');
 });
+
+// 窄螢幕（手機）隱藏 IV / Delta 欄，表頭的跨欄數要跟著調整
+const compactMq = window.matchMedia('(max-width: 1000px)');
+function applyCompact() {
+  const n = compactMq.matches ? '3' : '5';
+  $('sh-c').setAttribute('colspan', n);
+  $('sh-p').setAttribute('colspan', n);
+}
+compactMq.addEventListener('change', applyCompact);
+applyCompact();
 
 setInterval(clock, 1000);
 clock();

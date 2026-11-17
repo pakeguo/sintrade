@@ -90,6 +90,44 @@ npm run demo
 
 或在網址加 `?demo=1`，會用隨機產生的假資料。連不到 server 時也會自動切換成 DEMO，並在頁面頂端顯示黃色提示。
 
+## 用手機看（在家 Wi-Fi／出門在外）
+
+shioaji server 只接受本機連線，所以多了一支「唯讀轉接站」`phone-server.mjs`：
+
+```
+手機 ──▶ 轉接站（電腦的 5180 埠，需密碼）──▶ shioaji server（127.0.0.1:8080）
+```
+
+- 只放行看盤用的 API；**下單、帳務、設定一律封鎖**，手機或網址外洩也不能被拿去下單
+- 第一次要輸入密碼，之後 30 天免輸入；連續輸錯 5 次鎖 5 分鐘
+- 不用安裝任何套件
+
+### 第一次設定（在電腦上做一次）
+
+1. 在 `G:\sintrade\.env` 最後加一行密碼（至少 6 個字元，不要跟其他帳號共用）：
+
+   ```
+   MW_PASSWORD=自己想一組密碼
+   ```
+
+2. 打包一次（如果剛 `npm run deploy` 過可略過）：`npm.cmd run build`
+3. 啟動轉接站：`npm.cmd run phone`
+4. 第一次啟動時 Windows 會跳出「防火牆」視窗，**勾選「私人網路」並按允許**
+5. 視窗會列出網址，例如 `http://192.168.1.23:5180`。手機連同一個 Wi-Fi，用瀏覽器開這個網址、輸入密碼
+
+### 出門在外（Tailscale）
+
+1. 電腦安裝 Tailscale（https://tailscale.com/download ），用 Google 帳號登入
+2. 手機（App Store／Google Play）安裝 Tailscale，**用同一個帳號**登入並打開連線
+3. 重新執行 `npm.cmd run phone`，會多出一個 `http://100.x.x.x:5180（Tailscale）` 的網址
+4. 手機用行動網路也能開這個網址。只有登入你 Tailscale 帳號的裝置連得到，不會公開在網路上
+
+> 如果 Tailscale 網址打不開，到「Windows 安全性 → 防火牆與網路保護 → 允許應用程式通過防火牆」，把 Node.js 的「公用」也勾起來。
+
+### 每天使用
+
+電腦上要開著兩個視窗：`shioaji server start`（在 `G:\sintrade`）和 `npm.cmd run phone`。手機加入主畫面（Safari 分享 →「加入主畫面」）會更像 App。
+
 ## 疑難排解
 
 - **畫面只有白底文字、沒有顏色、時鐘停在 `--:--:--`**：代表 JS/CSS 沒載入。請 `git pull` 取得最新版，再重新執行 `npm run deploy`（現在會打包成單一 `index.html`，沒有子目錄路徑問題），然後在瀏覽器按 `Ctrl+F5` 強制重新整理。

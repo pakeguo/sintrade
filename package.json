@@ -8,7 +8,8 @@
     "demo": "vite --open /?demo=1",
     "build": "tsc --noEmit && vite build",
     "deploy": "tsc --noEmit && vite build && curl -sS -X POST http://127.0.0.1:8080/api/v1/apps/mywatch -F files=@dist/index.html",
-    "undeploy": "curl -sS -X DELETE http://127.0.0.1:8080/api/v1/apps/mywatch"
+    "undeploy": "curl -sS -X DELETE http://127.0.0.1:8080/api/v1/apps/mywatch",
+    "phone": "node phone-server.mjs"
   },
   "dependencies": {
     "lightweight-charts": "5.0.8"
