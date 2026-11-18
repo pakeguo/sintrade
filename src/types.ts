@@ -104,6 +104,12 @@ export interface OptContract extends Contract {
   reference: number;
 }
 
+export interface FutContract extends Contract {
+  name: string;
+  delivery_date: string; // YYYY-MM-DD
+  delivery_month: string; // YYYYMM
+}
+
 export interface OptRoot {
   root: string;
   name: string;
@@ -129,6 +135,8 @@ export interface Backend {
   scanner(type: ScannerType, ascending: boolean, count: number): Promise<ScanRow[]>;
   subscribe(c: Contract, q: QuoteType): Promise<void>;
   unsubscribe(c: Contract, q: QuoteType): Promise<void>;
+  /** 列出某期貨商品（如 TXF）的各月份實際合約（不含 R1/R2 連續月） */
+  futuresList(root: string): Promise<FutContract[]>;
   optionRoots(): Promise<OptRoot[]>;
   optionChain(root: string): Promise<OptContract[]>;
   connect(h: Handlers): void;

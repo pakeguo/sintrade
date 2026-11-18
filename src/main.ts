@@ -27,8 +27,9 @@ let be: Backend;
 let env: 'sim' | 'prod' | 'demo' = 'demo';
 const quotes = new Map<string, Q>();
 let idx: IndexQuote | null = null;
-let fut: Contract | null = null;          // TXFR1（含 target_code）
+let fut: Contract | null = null;          // 目前的台指期近月合約（自己挑，不依賴 TXFR1）
 let futKey = '';                          // 實際月份代碼，tick 以此回報
+let futName = '台指期 近月';
 let expiries: Expiry[] = [];
 let cur: Expiry | null = null;
 let range = Number(LS.get('range') ?? 10);
@@ -165,6 +166,63 @@ function tpeToday(offsetDays = 0) {
   return new Date(Date.now() + 8 * 3600_000 + offsetDays * 86400_000).toISOString().slice(0, 10);
 }
 
+/** 到期日當天 13:30 最後交易時刻之後就算到期（結算後夜盤已換成下一個月） */
+function isLive(deliveryDate: string): boolean {
+  const today = tpeToday();
+  if (deliveryDate > today) return true;
+  if (deliveryDate < today) return false;
+  const t = new Date(Date.now() + 8 * 3600_000);
+  return t.getUTCHours() * 60 + t.getUTCMinutes() < 13 * 60 + 30;
+}
+
+/** 挑出尚未到期、最近的台指期合約；拿不到清單時才退回 TXFR1 */
+async function pickFuture(): Promise<Contract & { name?: string; delivery_month?: string }> {
+  try {
+    const list = (await be.futuresList('TXF')).filter((f) => isLive(f.delivery_date))
+      .sort((a, b) => a.delivery_date.localeCompare(b.delivery_date));
+    if (list.length) return list[0];
+  } catch (e) { console.warn('futuresList', e); }
+  return be.resolve('TXFR1', 'FUT');
+}
+
+async function setFuture(c: Contract & { delivery_month?: string }) {
+  const old = fut;
+  const wasSelected = !!(selected && old && keyOf(selected) === keyOf(old));
+  if (old && keyOf(old) !== keyOf(c)) {
+    be.unsubscribe(old, 'Tick'); be.unsubscribe(old, 'BidAsk');
+  }
+  fut = c;
+  futKey = keyOf(c);
+  const m = Number((c.delivery_month ?? '').slice(4, 6));
+  futName = m ? `台指期 ${m}月` : '台指期 近月';
+  $('fut-btn').textContent = `看${futName.replace(' ', '')}`;
+  be.contractInfo(c).then((info) => {
+    const x = q(futKey);
+    if (!fin(x.ref) && fin(info.reference) && info.reference > 0) { x.ref = info.reference; dirty = true; }
+  }).catch(() => undefined);
+  await loadSnapshots([c]);
+  be.subscribe(c, 'Tick').catch(() => undefined);
+  be.subscribe(c, 'BidAsk').catch(() => undefined);
+  if (wasSelected) select(c, futName);
+  dirty = true;
+}
+
+/** 每分鐘檢查：結算後自動換到下個月的期貨，並移除已到期的選擇權 */
+async function rollCheck() {
+  try {
+    const next = await pickFuture();
+    if (fut && keyOf(next) !== futKey) {
+      console.info('期貨換月', futKey, '→', keyOf(next));
+      await setFuture(next);
+    }
+    if (cur && !isLive(cur.date)) {
+      await loadExpiries();
+      renderExpiries();
+      if (cur) await selectExpiry(cur);
+    }
+  } catch (e) { console.warn('rollCheck', e); }
+}
+
 async function loadExpiries() {
   const roots = await be.optionRoots();
   // 臺指選擇權家族：月選 TXO + 各週選（名稱為「臺指選擇權…」或 TX1–TX5）
@@ -173,13 +231,10 @@ async function loadExpiries() {
     if (r.root === 'TXO') throw e; // 月選都拿不到，代表 server 還沒就緒 → 交給 retry
     return [] as OptContract[];
   })));
-  const today = tpeToday();
-  const tpe = new Date(Date.now() + 8 * 3600_000);
-  const afterClose = tpe.getUTCHours() * 60 + tpe.getUTCMinutes() > 13 * 60 + 45;
   const groups = new Map<string, Expiry>();
   for (const list of lists) {
     for (const o of list) {
-      if (o.delivery_date < today || (o.delivery_date === today && afterClose)) continue;
+      if (!isLive(o.delivery_date)) continue;
       const key = `${o.root}:${o.delivery_date}`;
       let g = groups.get(key);
       if (!g) {
@@ -316,7 +371,7 @@ function renderCards(m: Metrics) {
     const basisHtml = session() === 'day'
       ? `基差 <b class="${cls(basis)}">${sign(basis, 1)}</b> ${fin(basis) ? (basis >= 0 ? '正價差' : '逆價差') : ''}`
       : `較現貨收盤 <b class="${cls(basis)}">${sign(basis, 0)}</b>`;
-    card('c-fut', '台指期 近月', fmt(f.last),
+    card('c-fut', futName, fmt(f.last),
       `<span class="${cls(ch)}">${sign(ch)}　${sign((ch / f.ref) * 100, 2)}%</span>
        <div>${basisHtml}</div>`,
       cls(ch), '日盤：基差 = 期貨 − 現貨，正價差偏樂觀、逆價差偏保守（也受除息影響）。夜盤時現貨已收盤，改顯示期貨相對現貨收盤價的變動。');
@@ -632,20 +687,12 @@ async function boot() {
   // 現貨指數與台指期
   const ix = await be.resolve('IX0001', 'IND').catch(() => ({ security_type: 'IND', exchange: 'TSE', code: 'IX0001' } as Contract));
   be.subscribe(ix, 'Quote').catch(() => undefined);
-  fut = await retry('查詢台指期商品檔', () => be.resolve('TXFR1', 'FUT'));
-  futKey = keyOf(fut);
-  be.contractInfo(fut).then((info) => {
-    const x = q(futKey);
-    if (!fin(x.ref) && fin(info.reference) && info.reference > 0) { x.ref = info.reference; dirty = true; }
-  }).catch(() => undefined);
   const [snapIx] = await be.snapshots([ix]).catch(() => []);
   if (snapIx && !idx) {
     idx = { code: 'IX0001', t: 0, close: snapIx.close, reference: snapIx.close - snapIx.change_price, open: snapIx.open,
       high: snapIx.high, low: snapIx.low, amountSum: snapIx.total_amount, raise: NaN, raiseStop: 0, fall: NaN, fallStop: 0, flat: NaN };
   }
-  await loadSnapshots([fut]);
-  be.subscribe(fut, 'Tick').catch(() => undefined);
-  be.subscribe(fut, 'BidAsk').catch(() => undefined);
+  await setFuture(await retry('查詢台指期商品檔', () => pickFuture()));
 
   showMsg('載入選擇權商品檔…');
   await retry('載入臺指選擇權商品檔', async () => {
@@ -654,8 +701,9 @@ async function boot() {
   });
   renderExpiries();
   if (cur) await selectExpiry(cur);
-  select(fut, '台指期 近月');
+  select(fut!, futName);
   frame();
+  setInterval(rollCheck, 60_000);
 
   // 每 15 秒以快照校正整條鏈的成交量（P/C 比與壓力支撐用全鏈資料）
   setInterval(() => { if (cur) loadSnapshots(cur.list); }, 15_000);
@@ -678,7 +726,7 @@ $('chain-body').addEventListener('click', (ev) => {
     if (compactMq.matches) setTimeout(() => document.querySelector('.detail')?.scrollIntoView({ behavior: 'smooth' }), 50);
   }
 });
-$('fut-btn').addEventListener('click', () => fut && select(fut, '台指期 近月'));
+$('fut-btn').addEventListener('click', () => fut && select(fut, futName));
 $('center-btn').addEventListener('click', () => recenter(true));
 $('range').querySelector('select')!.addEventListener('change', (ev) => {
   range = Number((ev.target as HTMLSelectElement).value);
@@ -691,7 +739,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'ArrowRight' && i < expiries.length - 1) selectExpiry(expiries[i + 1]);
   if (ev.key === 'ArrowLeft' && i > 0) selectExpiry(expiries[i - 1]);
   if (ev.key === 'c' || ev.key === 'C') recenter(true);
-  if (ev.key === 'f' || ev.key === 'F') fut && select(fut, '台指期 近月');
+  if (ev.key === 'f' || ev.key === 'F') fut && select(fut, futName);
 });
 
 // 窄螢幕（手機）隱藏 IV / Delta 欄，表頭的跨欄數要跟著調整

@@ -2,7 +2,7 @@
 // 金鑰與登入由 shioaji server 的 .env 處理，前端完全不碰金鑰。
 import type {
   Backend, Bar, BidAsk, Contract, Handlers, IndexQuote, Info, QuoteType,
-  OptContract, OptRoot, ScannerType, ScanRow, SecType, Snap, Tick,
+  FutContract, OptContract, OptRoot, ScannerType, ScanRow, SecType, Snap, Tick,
 } from './types';
 
 const BASE = '/api/v1';
@@ -123,6 +123,22 @@ export class LiveBackend implements Backend {
         volume: num(s.total_volume), amount: num(s.total_amount),
       };
     });
+  }
+
+  async futuresList(root: string): Promise<FutContract[]> {
+    const r = await req<unknown>('GET', `/data/contracts/futures?root=${encodeURIComponent(root)}&region=TW`);
+    const list = (Array.isArray(r) ? r : ((r as { contracts?: unknown[] }).contracts ?? [])) as Record<string, unknown>[];
+    return list
+      .filter((f) => f.code && f.delivery_date && !/R\d$/.test(String(f.code)))
+      .map((f) => ({
+        security_type: 'FUT' as const,
+        exchange: String(f.exchange ?? 'TAIFEX'),
+        code: String(f.code),
+        target_code: null,
+        name: String(f.name ?? f.code),
+        delivery_date: String(f.delivery_date).slice(0, 10).replace(/\//g, '-'),
+        delivery_month: String(f.delivery_month ?? ''),
+      }));
   }
 
   optionRoots() {

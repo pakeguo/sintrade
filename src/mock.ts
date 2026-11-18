@@ -2,7 +2,7 @@
 // 只用於預覽介面（網址加 ?demo=1，或連不到 server 時自動切換）。
 import { price as bsPrice, yearsToExpiry } from './bs';
 import type {
-  Backend, Bar, Contract, Handlers, Info, OptContract, OptRoot, QuoteType, ScanRow, Snap, Tick,
+  Backend, Bar, Contract, FutContract, Handlers, Info, OptContract, OptRoot, QuoteType, ScanRow, Snap, Tick,
 } from './types';
 
 const tpeNow = () => new Date(Date.now() + 8 * 3600_000); // 用 UTC getter 讀台北時間
@@ -38,6 +38,7 @@ export class DemoBackend implements Backend {
   private chains = new Map<string, OptContract[]>();
   private h?: Handlers;
   private futCode: string;
+  private futAlias = ''; // App 實際訂閱的台指期代碼（換月後會變），DEMO 一律對應同一份行情
 
   constructor() {
     const t = tpeNow();
@@ -84,8 +85,10 @@ export class DemoBackend implements Backend {
     return { name, reference: ref, limit_up: ref * 1.1, limit_down: ref * 0.9 };
   }
 
+  private norm(code: string) { return code.startsWith('TXF') ? this.futCode : code; }
+
   private get(c: Contract): Live | undefined {
-    return this.live.get(c.target_code ?? c.code);
+    return this.live.get(this.norm(c.target_code ?? c.code));
   }
 
   async snapshots(cs: Contract[]): Promise<Snap[]> {
@@ -93,7 +96,7 @@ export class DemoBackend implements Backend {
       const l = this.get(c);
       if (!l) return [];
       return [{
-        code: l.c.code, open: l.open, high: l.high, low: l.low, close: l.last,
+        code: c.code, open: l.open, high: l.high, low: l.low, close: l.last,
         change_price: l.last - l.ref, total_volume: l.totalVol, total_amount: 0,
       }];
     });
@@ -123,6 +126,17 @@ export class DemoBackend implements Backend {
 
   async recentTicks(): Promise<Tick[]> { return []; }
   async scanner(): Promise<ScanRow[]> { return []; }
+
+  async futuresList(): Promise<FutContract[]> {
+    const t = tpeNow();
+    const mk = (y: number, m: number): FutContract => {
+      const d = thirdWed(y, m);
+      const code = 'TXF' + MONTH_CODE[d.getUTCMonth()] + String(d.getUTCFullYear()).slice(-1);
+      return { security_type: 'FUT', exchange: 'TAIFEX', code, target_code: null, name: '臺股期貨',
+        delivery_date: ymd(d), delivery_month: ymd(d).slice(0, 7).replace('-', '') };
+    };
+    return [mk(t.getUTCFullYear(), t.getUTCMonth()), mk(t.getUTCFullYear(), t.getUTCMonth() + 1)];
+  }
 
   async optionRoots(): Promise<OptRoot[]> {
     return [
@@ -174,8 +188,16 @@ export class DemoBackend implements Backend {
     return list;
   }
 
-  async subscribe(c: Contract, q: QuoteType) { this.subs.add(`${c.target_code ?? c.code}:${q}`); }
-  async unsubscribe(c: Contract, q: QuoteType) { this.subs.delete(`${c.target_code ?? c.code}:${q}`); }
+  async subscribe(c: Contract, q: QuoteType) {
+    const code = c.target_code ?? c.code;
+    if (code.startsWith('TXF')) this.futAlias = code;
+    this.subs.add(`${this.norm(code)}:${q}`);
+  }
+  async unsubscribe(c: Contract, q: QuoteType) {
+    const code = c.target_code ?? c.code;
+    if (code.startsWith('TXF') && code !== this.futAlias) return; // 換月時舊月份退訂不影響新月份
+    this.subs.delete(`${this.norm(code)}:${q}`);
+  }
 
   connect(h: Handlers) {
     this.h = h;
@@ -207,7 +229,7 @@ export class DemoBackend implements Backend {
         const side = (fair >= l.last ? 1 : 2) as 1 | 2;
         l.last = fair; l.totalVol += vol;
         l.high = Math.max(l.high, fair); l.low = Math.min(l.low, fair);
-        h.tick({ code, t, price: fair, vol, totalVol: l.totalVol, side, high: l.high, low: l.low, open: l.open });
+        h.tick({ code: isFut ? this.futAlias || code : code, t, price: fair, vol, totalVol: l.totalVol, side, high: l.high, low: l.low, open: l.open });
       }
       if (baSub) {
         const tk = isFut ? 1 : fair >= 50 ? 1 : fair >= 10 ? 0.5 : 0.1;
@@ -216,7 +238,7 @@ export class DemoBackend implements Backend {
           bids.push([Math.max(0.1, +(fair - tk * (i + 1)).toFixed(1)), 1 + Math.floor(Math.random() * 60)]);
           asks.push([+(fair + tk * i).toFixed(1), 1 + Math.floor(Math.random() * 60)]);
         }
-        h.bidask({ code, bids, asks });
+        h.bidask({ code: isFut ? this.futAlias || code : code, bids, asks });
       }
     }
   }
