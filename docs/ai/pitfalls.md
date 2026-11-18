@@ -81,6 +81,18 @@
   此時 `setVisibleLogicalRange` 會算出極小的 barSpacing。
 - 解法：兩次 `requestAnimationFrame` 後先 `chart.resize()` 再設定範圍（`stocks.ts` 的 `loadK`）。
 
+## 7c. 類股串流盤後不推送 → 熱力圖空白
+
+- `index_components` 是即時串流，盤後很可能不再推送；一打開總覽就沒有資料。
+- 解法：盤中每 10 秒把類股值存到 localStorage `mw.sectorsClose`（含資料時間），盤後沒有即時資料時顯示「收盤 MM/DD HH:MM」。
+- 限制：當天盤中完全沒開過總覽就沒有收盤值（顯示說明文字）。
+
+## 7d. CSS 的 display 會蓋掉 HTML 的 hidden 屬性
+
+- `.heat-empty { display: flex }` 讓 `hidden` 失效，「載入中」一直壓在熱力圖上。
+- 有設定 display 的元素若要用 `hidden`，要補 `.xxx[hidden] { display: none; }`。
+- 同次也踩到：共用 class 設 `position: relative` 把原本 `position: absolute` 的容器蓋掉，畫布高度只剩一半。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

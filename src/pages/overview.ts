@@ -5,10 +5,11 @@
 //   底：今日損益｜期貨權益與風險｜持倉概況
 import { ColorType, createChart, LineSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
 import { account } from '../core/account';
-import { components, type Sector } from '../core/components';
+import { components } from '../core/components';
 import { hub } from '../core/hub';
 import { computeMetrics, type Expiry, loadTxoExpiries, pcrLabel, skewLabel } from '../core/optchain';
-import { cls, cssVar, esc, fin, fmt, fmtVol, session, sign, tpeToday } from '../core/util';
+import { cls, cssVar, esc, fin, fmt, session, sign, tpeToday } from '../core/util';
+import { Heatmap } from '../ui/heatmap';
 import type { Bar } from '../types';
 import type { Page } from './page';
 
@@ -27,8 +28,9 @@ const TEMPLATE = `
   </div>
   <div class="ov-row two">
     <div class="card ov-card" id="ov-heavy"></div>
-    <div class="card ov-card"><div class="ct">產業類股熱力圖<span class="tip" title="方塊大小＝權重、顏色＝類股加權漲跌幅，數字為對大盤的貢獻點數">?</span></div>
-      <div id="ov-heat" class="heat"></div></div>
+    <div class="card ov-card"><div class="ct">產業類股熱力圖<span class="tip" title="方塊大小＝權重、顏色＝類股加權漲跌幅、數字＝對大盤的貢獻點數。光點密度＝每秒成交金額（資金流量）；往上紅點＝正在推升指數，往下綠點＝正在拖累">?</span>
+      <span id="ov-heat-tag" class="ct-r hm-tag"></span></div>
+      <div class="heat"><div id="ov-heat" class="heat-c"></div><div id="ov-heat-empty" class="muted heat-empty" hidden></div></div></div>
   </div>
   <div class="ov-row three">
     <div class="card ov-card hero" id="ov-pnl"></div>
@@ -174,60 +176,20 @@ function renderHeavy() {
     }).join('')}</tbody></table>`;
 }
 
-// ───────── 類股熱力圖（squarified treemap） ─────────
-interface Rect { x: number; y: number; w: number; h: number; s: Sector }
-function squarify(items: Sector[], x: number, y: number, w: number, h: number): Rect[] {
-  const total = items.reduce((s, i) => s + i.weight, 0);
-  if (!items.length || total <= 0) return [];
-  const scale = (w * h) / total;
-  const out: Rect[] = [];
-  let rest = items.map((s) => ({ s, a: s.weight * scale }));
-  while (rest.length) {
-    const short = Math.min(w, h);
-    let row: typeof rest = [];
-    let best = Infinity;
-    for (const it of rest) {
-      const cand = [...row, it];
-      const sum = cand.reduce((s, c) => s + c.a, 0);
-      const mx = Math.max(...cand.map((c) => c.a)), mn = Math.min(...cand.map((c) => c.a));
-      const worst = Math.max((short * short * mx) / (sum * sum), (sum * sum) / (short * short * mn));
-      if (worst > best) break;
-      best = worst; row = cand;
-    }
-    const sum = row.reduce((s, c) => s + c.a, 0);
-    const thick = sum / short;
-    let off = 0;
-    for (const c of row) {
-      const len = c.a / thick;
-      out.push(w >= h ? { x, y: y + off, w: thick, h: len, s: c.s } : { x: x + off, y, w: len, h: thick, s: c.s });
-      off += len;
-    }
-    if (w >= h) { x += thick; w -= thick; } else { y += thick; h -= thick; }
-    rest = rest.slice(row.length);
-  }
-  return out;
-}
-
-function heatColor(p: number) {
-  if (!fin(p)) return 'rgba(139,149,163,.25)';
-  const a = Math.min(1, Math.abs(p) / 3) * 0.75 + 0.15;
-  return p >= 0 ? `rgba(240,82,79,${a})` : `rgba(34,176,125,${a})`;
-}
-
+// ───────── 類股熱力圖（Canvas 動畫，src/ui/heatmap.ts） ─────────
+let heat: Heatmap | null = null;
 function renderHeat() {
-  const el = document.getElementById('ov-heat');
-  if (!el) return;
-  const list = components.sectorList();
-  if (!list.length) { el.innerHTML = `<div class="muted heat-empty">${session() === 'night' || session() === 'closed' ? '等待類股資料（現貨盤後可能沒有更新）…' : '載入中…'}</div>`; return; }
-  const W = el.clientWidth, H = el.clientHeight;
-  el.innerHTML = squarify(list, 0, 0, W, H).map((r) => {
-    const big = r.w > 80 && r.h > 44;
-    return `<div class="hc" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;background:${heatColor(r.s.perf)}"
-      title="${esc(r.s.name)}　權重 ${r.s.weight.toFixed(1)}%　漲跌 ${fin(r.s.perf) ? sign(r.s.perf, 2) + '%' : '—'}　貢獻 ${fin(r.s.contrib) ? sign(r.s.contrib, 1) : '—'} 點">
-      ${r.w > 46 && r.h > 22 ? `<b>${esc(r.s.name.replace(/業$/, ''))}</b>` : ''}
-      ${big ? `<span>${fin(r.s.perf) ? sign(r.s.perf, 2) + '%' : ''}</span><small>${fin(r.s.contrib) ? sign(r.s.contrib, 1) + ' 點' : ''}</small>` : ''}
-    </div>`;
-  }).join('');
+  const st = components.sectorState();
+  const tag = document.getElementById('ov-heat-tag');
+  if (tag) {
+    const asOf = st.asOf.replace(/^\d{4}-/, '').replace('-', '/').slice(0, 11);
+    tag.innerHTML = st.live ? '<span class="live-dot"></span>即時' : st.list.length ? `收盤${asOf ? ' ' + asOf : ''}` : '';
+    tag.className = 'ct-r hm-tag' + (st.live ? ' live' : '');
+  }
+  const empty = document.getElementById('ov-heat-empty')!;
+  empty.hidden = st.list.length > 0;
+  empty.textContent = session() === 'day' ? '載入中…' : '盤後尚無收盤資料：今天盤中開過總覽後，盤後就會顯示收盤值';
+  heat?.setData(st.list, st.live);
 }
 
 // ───────── 帳戶 ─────────
@@ -303,6 +265,7 @@ export const overviewPage: Page = {
     el.innerHTML = TEMPLATE;
     document.getElementById('ov-fut-name')!.textContent = hub.futName;
     initChart();
+    heat = new Heatmap(document.getElementById('ov-heat')!);
     components.use(OWNER);
     account.use(OWNER);
     hub.acquire(OWNER, { security_type: 'IND', exchange: 'OTC', code: 'IX0043' }, ['Quote']);
@@ -348,6 +311,7 @@ export const overviewPage: Page = {
     account.unuse(OWNER);
     hub.releaseAll(OWNER);
     chart?.remove();
+    heat?.destroy(); heat = null;
     chart = null; ixLine = null; futLine = null; lastIxT = 0; lastFutT = 0;
   },
 };

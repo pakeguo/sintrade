@@ -293,7 +293,8 @@ export class LiveBackend implements Backend {
         const groups = Array.isArray(d.groups) ? (d.groups as Record<string, unknown>[]).map((g) => ({
           category: String(g.category), name: String(g.name ?? g.category), count: num(g.item_count), value: num(g.value),
         })) : undefined;
-        h.components({ projection: d.projection as ComponentsProjection, entries, groups, simtrade: Boolean(d.simtrade) } as ComponentsUpdate);
+        h.components({ projection: d.projection as ComponentsProjection, entries, groups, simtrade: Boolean(d.simtrade),
+          date: d.date ? String(d.date).replace(/\//g, '-') : undefined, time: d.time ? String(d.time).slice(0, 8) : undefined } as ComponentsUpdate);
       });
       on('heartbeat', () => h.status('live'));
     };

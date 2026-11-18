@@ -272,8 +272,16 @@ export class DemoBackend implements Backend {
   private compSubs = new Map<string, ComponentsProjection>();
   async subscribeComponents(p: ComponentsProjection) { this.compSubs.set(JSON.stringify(p), p); }
   async unsubscribeComponents(p: ComponentsProjection) { this.compSubs.delete(JSON.stringify(p)); }
+  private groupAmt = new Map<string, number>();
+  private closeSent = new Set<string>();
   private emitComponents() {
     const h = this.h!;
+    // 只在日盤（09:00–13:30）持續推送；盤後最多送一次最後的數值（&quiet=1 則完全不送，用來測收盤快取）
+    const tw = tpeNow(), mins = tw.getUTCHours() * 60 + tw.getUTCMinutes(), wd = tw.getUTCDay();
+    const open = wd >= 1 && wd <= 5 && mins >= 9 * 60 && mins < 13 * 60 + 30;
+    const quiet = new URLSearchParams(location.search).has('quiet');
+    const timeStr = open ? tw.toISOString().slice(11, 19) : '13:30:00';
+    const dateStr = tw.toISOString().slice(0, 10);
     const drift = (this.spot - this.spotRef) / this.spotRef;
     const entries: ComponentEntry[] = STOCKS.map(([code, , cat, w, ref]) => {
       const prev = this.stockPx.get(code) ?? ref * (1 + drift * (0.6 + Math.random()));
@@ -283,6 +291,11 @@ export class DemoBackend implements Backend {
       return { code, category: cat, price, reference: ref, pct, weightPpm: w, value: this.spotRef * (w / 1e6) * (price / ref - 1) };
     });
     for (const p of this.compSubs.values()) {
+      const key = JSON.stringify(p);
+      if (!open) {
+        if (quiet || this.closeSent.has(key)) continue;
+        this.closeSent.add(key);
+      }
       if (p.kind === 'ranking') {
         let list = [...entries];
         if (p.metric === 'weight') list.sort((a, b) => b.weightPpm - a.weightPpm);
@@ -296,10 +309,13 @@ export class DemoBackend implements Backend {
           const w = es.reduce((s, e) => s + e.weightPpm, 0) / 1e4 + 1.5;
           const contrib = es.reduce((s, e) => s + e.value, 0) + (Math.random() - 0.5) * 2;
           const perf = w ? (contrib / this.spotRef) / (w / 100) * 100 : 0;
-          const value = p.metric === 'weight' ? w : p.metric === 'contribution' ? contrib : perf;
+          let amt = this.groupAmt.get(cat) ?? w * 8e8 * (0.6 + Math.random());
+          if (open && p.metric === 'amount') amt += w * 4e6 * (0.3 + Math.random() * 1.7) * (1 + Math.abs(perf));
+          this.groupAmt.set(cat, amt);
+          const value = p.metric === 'weight' ? w : p.metric === 'contribution' ? contrib : p.metric === 'amount' ? amt : perf;
           return { category: cat, name, count: Math.max(es.length * 6, 7), value };
         });
-        h.components({ projection: p, groups });
+        h.components({ projection: p, groups, date: dateStr, time: timeStr });
       }
     }
   }

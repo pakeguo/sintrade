@@ -44,6 +44,8 @@ src/
     stocks.ts        個股（完成）：自選群組（拖曳、同步）、盤中（分時+VWAP、五檔、內外盤、大單三級、逐筆）、
                      K 線（日週月、MA、布林、RSI、分價量表）
     blueprint.ts     藍圖頁產生器
+  ui/
+    heatmap.ts       類股熱力圖 Canvas 渲染器（squarify 版面、緩動、粒子、光暈、tooltip；隱藏分頁自動暫停）
   api.ts             LiveBackend：HTTP + SSE
   mock.ts            DemoBackend：假資料（?demo=1）
   bs.ts              Black-76

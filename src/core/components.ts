@@ -11,7 +11,13 @@ export interface Heavy {
   code: string; name: string; weight: number; // 權重（小數，0.416 = 41.6%）
   price: number; ref: number; pct: number; contrib: number;
 }
-export interface Sector { category: string; name: string; weight: number; contrib: number; perf: number }
+export interface Sector {
+  category: string; name: string; weight: number; contrib: number; perf: number;
+  amount: number;      // 今日累計成交金額
+  flow: number;        // 每秒新增成交金額（平滑後）＝資金流量
+  push: number;        // 貢獻點數每秒變化（平滑後）：正＝正在推升指數、負＝正在拖累
+}
+export interface SectorState { list: Sector[]; live: boolean; asOf: string }
 
 const P_WEIGHT: ComponentsProjection = { kind: 'ranking', target: 'component', metric: 'weight', order: 'desc', limit: 10 };
 const P_POS: ComponentsProjection = { kind: 'ranking', target: 'component', metric: 'contribution', order: 'positive_desc', limit: 25 };
@@ -19,7 +25,8 @@ const P_NEG: ComponentsProjection = { kind: 'ranking', target: 'component', metr
 const G_CONTRIB: ComponentsProjection = { kind: 'group_metric', metric: 'contribution' };
 const G_WEIGHT: ComponentsProjection = { kind: 'group_metric', metric: 'weight' };
 const G_PERF: ComponentsProjection = { kind: 'group_metric', metric: 'weighted_performance' };
-const ALL = [P_WEIGHT, P_POS, P_NEG, G_CONTRIB, G_WEIGHT, G_PERF];
+const G_AMOUNT: ComponentsProjection = { kind: 'group_metric', metric: 'amount' };
+const ALL = [P_WEIGHT, P_POS, P_NEG, G_CONTRIB, G_WEIGHT, G_PERF, G_AMOUNT];
 
 // 第一次使用、權重尚未收集到之前的預設清單（只用代碼排序，權重以串流為準）
 const SEED = ['2330', '2317', '2454', '2308', '2382', '2881', '2891', '3711', '2882', '2412',
@@ -31,6 +38,9 @@ class Components {
   private names = LS.getJSON<Record<string, string>>('names', {});
   private refs = new Map<string, number>();
   private sectors = new Map<string, Sector>();
+  private sectorsAsOf = '';
+  private sectorsLiveAt = 0;   // 最後一次收到即時類股資料的時間（毫秒）
+  private lastSectorSave = 0;
   private top: string[] = [];
   private off: (() => void) | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -64,13 +74,39 @@ class Components {
       if (changed) { this.refreshTop(); this.save(); }
     }
     if (u.groups && p.kind === 'group_metric') {
+      const now = performance.now();
       for (const g of u.groups) {
-        const s = this.sectors.get(g.category) ?? { category: g.category, name: g.name, weight: NaN, contrib: NaN, perf: NaN };
+        let s = this.sectors.get(g.category) as (Sector & { _at?: number; _c?: number; _a?: number }) | undefined;
+        if (!s) {
+          s = { category: g.category, name: g.name, weight: NaN, contrib: NaN, perf: NaN, amount: NaN, flow: 0, push: 0 };
+          this.sectors.set(g.category, s);
+        }
         s.name = g.name;
-        if (p.metric === 'contribution') s.contrib = g.value;
+        if (p.metric === 'contribution') {
+          // 貢獻點數的變化速度（指數平滑），代表這個類股「此刻」正在推升或拖累大盤
+          if (fin(s.contrib) && s._c !== undefined) {
+            const dt = Math.max(0.2, (now - (s._at ?? now)) / 1000);
+            s.push = s.push * 0.6 + ((g.value - s.contrib) / dt) * 0.4;
+          }
+          s.contrib = g.value; s._c = 1; s._at = now;
+        }
         if (p.metric === 'weight') s.weight = g.value;
         if (p.metric === 'weighted_performance') s.perf = g.value;
-        this.sectors.set(g.category, s);
+        if (p.metric === 'amount') {
+          if (fin(s.amount) && s._a !== undefined && g.value >= s.amount) {
+            const dt = Math.max(0.2, (now - s._a) / 1000);
+            s.flow = s.flow * 0.6 + ((g.value - s.amount) / dt) * 0.4;
+          }
+          s.amount = g.value; s._a = now;
+        }
+      }
+      this.sectorsLiveAt = Date.now();
+      if (u.date || u.time) this.sectorsAsOf = `${u.date ?? ''} ${u.time ?? ''}`.trim();
+      // 每 10 秒存一份到瀏覽器，盤後串流不再推送時用來顯示收盤值
+      if (Date.now() - this.lastSectorSave > 10_000) {
+        this.lastSectorSave = Date.now();
+        const list = this.sectorList().map((x) => ({ ...x, flow: 0, push: 0 }));
+        if (list.length) LS.setJSON('sectorsClose', { asOf: this.sectorsAsOf || new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 16).replace('T', ' '), list });
       }
     }
   }
@@ -111,6 +147,15 @@ class Components {
 
   sectorList(): Sector[] {
     return [...this.sectors.values()].filter((s) => fin(s.weight) && s.weight > 0).sort((a, b) => b.weight - a.weight);
+  }
+
+  /** 熱力圖用：有即時資料就用即時（live）；沒有（盤後串流不推送）就用最後存下的收盤值 */
+  sectorState(): SectorState {
+    const list = this.sectorList();
+    if (list.length) return { list, live: Date.now() - this.sectorsLiveAt < 15_000, asOf: this.sectorsAsOf };
+    const cached = LS.getJSON<{ asOf: string; list: Sector[] } | null>('sectorsClose', null);
+    if (cached?.list?.length) return { list: cached.list, live: false, asOf: cached.asOf };
+    return { list: [], live: false, asOf: '' };
   }
 }
 

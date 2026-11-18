@@ -139,6 +139,9 @@ export interface ComponentsUpdate {
   entries?: ComponentEntry[];
   groups?: GroupEntry[];
   simtrade?: boolean;
+  /** 資料時間（台北），例：2026-11-18 / 13:30:00 */
+  date?: string;
+  time?: string;
 }
 
 export type ConnStatus = 'connecting' | 'live' | 'down' | 'demo';
