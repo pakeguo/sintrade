@@ -93,6 +93,16 @@
 - 有設定 display 的元素若要用 `hidden`，要補 `.xxx[hidden] { display: none; }`。
 - 同次也踩到：共用 class 設 `position: relative` 把原本 `position: absolute` 的容器蓋掉，畫布高度只剩一半。
 
+## 7e. 全域 CSS 規則誤傷其他頁的同類元件
+
+- 期權頁手機版用 `.chain thead tr:nth-child(2) th:nth-child(2)` 隱藏 IV 欄，結果商品頁的精簡 T 字報價（也用 `.chain`）表頭被藏錯欄。
+- 頁面專屬規則要加 `.page-<id>` 前綴（`main.ts` 會把頁面容器設成 `page page-<id>`）。
+
+## 7f. 模組層級變數只在載入時讀一次 localStorage
+
+- 個股頁的 `mode` 在 import 時讀 `LS.get('stkMode')`，之後 `openTA()` 改了 LS 也不會生效。
+- 會被其他頁面改動的設定，要在 `mount()` 時重新讀取。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

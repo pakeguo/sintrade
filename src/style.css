@@ -233,6 +233,57 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .vp b { position: absolute; right: 4px; font-size: 11px; color: var(--accent); transform: translateY(-2px); }
 .kinfo { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; padding: 6px 4px; }
 .rchart { height: 130px; border-top: 1px solid var(--line); }
+/* 商品頁 */
+.pd { display: grid; grid-template-columns: minmax(0, 1fr) 560px; gap: 10px; padding: 10px 16px 16px; align-items: start; }
+.pd-left, .pd-right { padding: 10px 12px; min-height: 0; }
+.pd-tabs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.pd-tab { border-radius: 8px; padding: 5px 12px; font-weight: 600; }
+.pd-tab small { margin-left: 5px; color: var(--muted); font-weight: 400; }
+.pd-tab.fixed { border-style: dashed; }
+.pd-tab.on { background: var(--accent); color: #1a1405; border-color: var(--accent); }
+.pd-tab.on small { color: #3d2f0b; }
+.pd-tab.add { padding: 5px 10px; }
+.pd-sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.pd-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 0; font-size: 12px; min-height: 40px; }
+.pd-tools input { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font: inherit; width: 280px; }
+.pd-tools input:focus { outline: none; border-color: var(--accent); }
+.pd-tools button { padding: 4px 10px; font-size: 12px; }
+.pd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.pd-empty { grid-column: 1 / -1; padding: 30px; text-align: center; }
+.qc { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; background: var(--panel2); cursor: pointer;
+  transition: border-color .15s, transform .15s; }
+.qc:hover { border-color: var(--accent); transform: translateY(-1px); }
+.qc.tint-up { background: linear-gradient(180deg, rgba(240,82,79,.10), var(--panel2) 60%); }
+.qc.tint-dn { background: linear-gradient(180deg, rgba(34,176,125,.10), var(--panel2) 60%); }
+.qc-h { display: flex; align-items: baseline; gap: 6px; padding-right: 14px; }
+.qc-h b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qc-h small { color: var(--muted); font-size: 11px; }
+.qc-x { position: absolute; right: 4px; top: 4px; padding: 0 6px; font-size: 12px; line-height: 18px; display: none; }
+.qc:hover .qc-x { display: block; }
+.qc-p { font-size: 26px; font-weight: 800; line-height: 1.15; margin-top: 2px; display: inline-block; padding: 0 3px; margin-left: -3px; border-radius: 4px; }
+.qc-p.fu { background: rgba(240,82,79,.28); } .qc-p.fd { background: rgba(34,176,125,.28); }
+.qc-c { font-size: 13px; }
+.qc-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 2px 6px; align-items: baseline; font-size: 12px; margin-top: 6px; color: var(--muted); }
+.qc-row b { color: var(--text); font-weight: 600; } .qc-row b small { color: var(--muted); font-weight: 400; }
+.qc-row b.accent { color: var(--accent); }
+.qc-ba { display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; border-top: 1px dashed var(--line); padding-top: 4px; }
+.qc-ba .b b { color: var(--up); } .qc-ba .a b { color: var(--down); }
+.qc-ba small { color: var(--muted); margin-left: 3px; }
+.qc-held { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.qc.spread { cursor: default; border-style: dashed; } .qc.spread:hover { transform: none; border-color: var(--line); }
+/* 精簡 T 字報價 */
+.tc-chips { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0; scrollbar-width: thin; }
+.tc-chip { flex: none; display: flex; flex-direction: column; align-items: center; padding: 4px 10px; border-radius: 9px; line-height: 1.2; }
+.tc-chip b { font-size: 14px; } .tc-chip span { font-size: 11px; } .tc-chip small { font-size: 10px; color: var(--muted); }
+.tc-chip.on { background: var(--accent); color: #1a1405; border-color: var(--accent); } .tc-chip.on small { color: #3d2f0b; }
+.tc-kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 10px; padding: 6px 2px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.tc-kpi div { display: flex; align-items: baseline; gap: 6px; } .tc-kpi span { color: var(--muted); font-size: 11px; }
+.tc-kpi b { font-size: 14px; } .tc-kpi small { color: var(--muted); font-size: 11px; }
+.tc-wrap { max-height: calc(100vh - 290px); overflow-y: auto; overflow-x: hidden; }
+table.tc td { padding: 3px 4px; } table.tc td.px { min-width: 54px; font-size: 13px; } table.tc td.k { min-width: 70px; font-size: 13px; }
+table.tc td.vol { min-width: 64px; width: 22%; }
+.tc-foot { display: flex; align-items: center; gap: 10px; font-size: 12px; padding-top: 6px; color: var(--muted); }
+.tc-foot button { padding: 3px 10px; font-size: 12px; }
 /* 設計藍圖 */
 .bp { padding: 14px 16px; }
 .bp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 12px; }
@@ -384,9 +435,10 @@ table.chain { width: 100%; border-collapse: collapse; }
   main { grid-template-columns: 1fr; flex: none; min-height: auto; }
   .chain-wrap { display: block; }
   .detail { overflow: visible; }
-  .chain td.iv, .chain td.dl,
-  .chain thead tr:nth-child(2) th:nth-child(2), .chain thead tr:nth-child(2) th:nth-child(3),
-  .chain thead tr:nth-child(2) th:nth-child(9), .chain thead tr:nth-child(2) th:nth-child(10) { display: none; }
+  /* 只作用在期權頁的完整 T 字報價（商品頁的精簡版沒有 IV/Delta 欄） */
+  .page-options .chain td.iv, .page-options .chain td.dl,
+  .page-options .chain thead tr:nth-child(2) th:nth-child(2), .page-options .chain thead tr:nth-child(2) th:nth-child(3),
+  .page-options .chain thead tr:nth-child(2) th:nth-child(9), .page-options .chain thead tr:nth-child(2) th:nth-child(10) { display: none; }
   .chain-wrap, .detail { max-height: none; }
 }
 @media (max-width: 1100px) {
@@ -397,6 +449,8 @@ table.chain { width: 100%; border-collapse: collapse; }
   .lv-ticks { grid-column: 1 / -1; } .ticks { max-height: 320px; }
 }
 @media (max-width: 1100px) {
+  .pd { grid-template-columns: 1fr; }
+  .tc-wrap { max-height: none; }
   .stk { grid-template-columns: 1fr; }
   .wl { position: static; max-height: 360px; }
   .live { grid-template-columns: 1fr; }
@@ -409,6 +463,13 @@ table.chain { width: 100%; border-collapse: collapse; }
   .acct .ct-r { margin-left: 0; width: 100%; flex-wrap: wrap; margin-top: 4px; }
   .payoff { height: 240px; }
   .stk { padding: 8px; }
+  .pd { padding: 8px; }
+  .pd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .qc { padding: 7px 8px; } .qc-p { font-size: 21px; }
+  .pd-tools input { width: 100%; }
+  .tc-kpi { grid-template-columns: repeat(2, 1fr); }
+  table.tc td.vol { min-width: 40px; width: auto; } table.tc td.k { min-width: 52px; } table.tc td.px { min-width: 40px; }
+  table.tc td { padding: 3px 2px; }
   .ichart { height: 300px; } .kchart { height: 360px; }
   .sh-p { font-size: 26px; }
   .addw { margin-left: 0; }

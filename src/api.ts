@@ -87,6 +87,7 @@ export class LiveBackend implements Backend {
           close: num(s.close), change_price: num(s.change_price),
           total_volume: num(s.total_volume), total_amount: num(s.total_amount),
           buy_price: num(s.buy_price), sell_price: num(s.sell_price),
+          volume_ratio: num(s.volume_ratio), yesterday_volume: num(s.yesterday_volume),
         });
       }
     }

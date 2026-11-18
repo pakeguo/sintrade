@@ -13,6 +13,7 @@ const nowSec = () => Math.floor(tpeNow().getTime() / 1000);
 interface Live {
   c: Contract; ref: number; last: number; open: number; high: number; low: number;
   totalVol: number; opt?: OptContract;
+  off?: number; // 期貨：相對台指期近月的價差（次月、遠月）
 }
 
 function nextWeekday(from: Date, wd: number, skip = 0): Date {
@@ -109,6 +110,17 @@ export class DemoBackend implements Backend {
   private get(c: Contract): Live | undefined {
     const code = this.norm(c.target_code ?? c.code);
     let l = this.live.get(code);
+    const fm = code.match(/^(MXF|TMF)([A-L])\d$/);
+    if (!l && fm) {
+      // 小台／微台：以台指期近月為基準，越遠的月份加一點價差
+      const near = MONTH_CODE.indexOf(this.futCode[3]);
+      const k = (MONTH_CODE.indexOf(fm[2]) - near + 12) % 12;
+      const off = k * 18 - 6;
+      l = this.mk({ security_type: 'FUT', exchange: 'TAIFEX', code }, this.spotRef + 30 + off, Math.round(this.F + off));
+      l.off = off;
+      l.totalVol = Math.floor(20000 / (k + 1) + Math.random() * 3000);
+      this.live.set(code, l);
+    }
     if (!l && /^\d{4,6}[A-Z]?$/.test(code)) {
       // 個股：權值股用固定參考價，其他代碼用代碼算一個假的價位
       const s = STOCKS.find((x) => x[0] === code);
@@ -129,6 +141,7 @@ export class DemoBackend implements Backend {
       return [{
         code: c.code, open: l.open, high: l.high, low: l.low, close: l.last,
         change_price: l.last - l.ref, total_volume: l.totalVol, total_amount: 0, buy_price: NaN, sell_price: NaN,
+        yesterday_volume: Math.round(l.totalVol * (0.7 + Math.random() * 0.8)), volume_ratio: +(0.6 + Math.random() * 1.2).toFixed(2),
       }];
     });
   }
@@ -204,15 +217,16 @@ export class DemoBackend implements Backend {
   async recentTicks(): Promise<Tick[]> { return []; }
   async scanner(): Promise<ScanRow[]> { return []; }
 
-  async futuresList(): Promise<FutContract[]> {
+  async futuresList(root = 'TXF'): Promise<FutContract[]> {
     const t = tpeNow();
+    const names: Record<string, string> = { TXF: '臺股期貨', MXF: '小型臺指', TMF: '微型臺指' };
     const mk = (y: number, m: number): FutContract => {
       const d = thirdWed(y, m);
-      const code = 'TXF' + MONTH_CODE[d.getUTCMonth()] + String(d.getUTCFullYear()).slice(-1);
-      return { security_type: 'FUT', exchange: 'TAIFEX', code, target_code: null, name: '臺股期貨',
+      const code = root + MONTH_CODE[d.getUTCMonth()] + String(d.getUTCFullYear()).slice(-1);
+      return { security_type: 'FUT', exchange: 'TAIFEX', code, target_code: null, name: `${names[root] ?? root} ${ymd(d).slice(0, 7).replace('-', '')}`,
         delivery_date: ymd(d), delivery_month: ymd(d).slice(0, 7).replace('-', '') };
     };
-    return [mk(t.getUTCFullYear(), t.getUTCMonth()), mk(t.getUTCFullYear(), t.getUTCMonth() + 1)];
+    return [mk(t.getUTCFullYear(), t.getUTCMonth()), mk(t.getUTCFullYear(), t.getUTCMonth() + 1), mk(t.getUTCFullYear(), t.getUTCMonth() + 2)];
   }
 
   // ── 帳務（假資料） ──
@@ -409,7 +423,8 @@ export class DemoBackend implements Backend {
       const tickSub = this.subs.has(`${code}:Tick`);
       const baSub = this.subs.has(`${code}:BidAsk`);
       if (!tickSub && !baSub) continue;
-      const isFut = code === this.futCode;
+      const isTx = code === this.futCode;
+      const isFut = isTx || l.c.security_type === 'FUT';
       const isStk = l.c.security_type === 'STK';
       let fair: number;
       if (isStk) {
@@ -417,7 +432,7 @@ export class DemoBackend implements Backend {
         const base = this.stockPx.get(code) ?? l.last;
         fair = +(Math.round((base + (Math.random() - 0.5) * tk * 2) / tk) * tk).toFixed(2);
         this.stockPx.set(code, fair);
-      } else fair = isFut ? Math.round(this.F) : this.optPrice(l.opt!);
+      } else fair = isFut ? Math.round(this.F + (l.off ?? 0)) : this.optPrice(l.opt!);
       const trade = isFut || Math.random() < (isStk ? 0.5 : 0.18);
       if (trade && tickSub) {
         const vol = isStk && Math.random() < 0.03 ? 50 + Math.floor(Math.random() * 600)
@@ -425,7 +440,7 @@ export class DemoBackend implements Backend {
         const side = (fair >= l.last ? 1 : 2) as 1 | 2;
         l.last = fair; l.totalVol += vol;
         l.high = Math.max(l.high, fair); l.low = Math.min(l.low, fair);
-        h.tick({ code: isFut ? this.futAlias || code : code, t, price: fair, vol, totalVol: l.totalVol, side, high: l.high, low: l.low, open: l.open });
+        h.tick({ code: isTx ? this.futAlias || code : code, t, price: fair, vol, totalVol: l.totalVol, side, high: l.high, low: l.low, open: l.open });
       }
       if (baSub) {
         const tk = isStk ? (l.ref > 1000 ? 5 : l.ref > 100 ? 0.5 : 0.05) : isFut ? 1 : fair >= 50 ? 1 : fair >= 10 ? 0.5 : 0.1;
@@ -434,7 +449,7 @@ export class DemoBackend implements Backend {
           bids.push([Math.max(0.01, +(fair - tk * (i + 1)).toFixed(2)), 1 + Math.floor(Math.random() * 60)]);
           asks.push([+(fair + tk * i).toFixed(2), 1 + Math.floor(Math.random() * 60)]);
         }
-        h.bidask({ code: isFut ? this.futAlias || code : code, bids, asks });
+        h.bidask({ code: isTx ? this.futAlias || code : code, bids, asks });
       }
     }
   }

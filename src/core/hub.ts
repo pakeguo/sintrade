@@ -12,6 +12,7 @@ export interface Q {
   bids: [number, number][]; asks: [number, number][];
   bidSideVol: number; askSideVol: number;  // 內外盤累計量
   snapBid: number; snapAsk: number;        // 快照帶的最佳買賣價（沒有即時五檔時用）
+  yVol: number; volRatio: number;          // 昨量、量比（快照）
   flash: number; dir: 0 | 1 | -1;           // 最近一次價格變動的時間與方向（畫面閃爍用）
 }
 
@@ -62,7 +63,7 @@ class Hub {
     let x = this.quotes.get(code);
     if (!x) {
       x = { last: NaN, ref: NaN, vol: 0, high: NaN, low: NaN, open: NaN, bids: [], asks: [],
-        bidSideVol: NaN, askSideVol: NaN, snapBid: NaN, snapAsk: NaN, flash: 0, dir: 0 };
+        bidSideVol: NaN, askSideVol: NaN, snapBid: NaN, snapAsk: NaN, yVol: NaN, volRatio: NaN, flash: 0, dir: 0 };
       this.quotes.set(code, x);
     }
     return x;
@@ -180,6 +181,7 @@ class Hub {
         x.vol = Math.max(x.vol, s.total_volume || 0);
         x.high = s.high; x.low = s.low; x.open = s.open;
         x.snapBid = s.buy_price; x.snapAsk = s.sell_price;
+        x.yVol = s.yesterday_volume; x.volRatio = s.volume_ratio;
       }
       this.emit('change', undefined);
     } catch (e) { console.warn('snapshots', e); }

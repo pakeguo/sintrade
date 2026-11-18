@@ -6,9 +6,10 @@ import { accountPage } from './pages/account';
 import { optionsPage } from './pages/options';
 import { overviewPage } from './pages/overview';
 import type { Page } from './pages/page';
+import { productsPage } from './pages/products';
 import { stocksPage } from './pages/stocks';
 
-const PAGES: Page[] = [overviewPage, stocksPage, optionsPage, accountPage];
+const PAGES: Page[] = [overviewPage, productsPage, stocksPage, optionsPage, accountPage];
 let current: Page | null = null;
 
 function route() {

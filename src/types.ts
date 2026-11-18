@@ -25,6 +25,9 @@ export interface Snap {
   total_amount: number;
   buy_price: number;
   sell_price: number;
+  /** 量比（永豐計算）與昨量 */
+  volume_ratio: number;
+  yesterday_volume: number;
 }
 
 /** 時間一律用「台北當地時間當作 UTC」的秒數，圖表直接顯示台北時間 */

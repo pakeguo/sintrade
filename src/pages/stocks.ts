@@ -523,6 +523,8 @@ export const stocksPage: Page = {
     mounted = true;
     dirty = true;
     el.innerHTML = TEMPLATE;
+    // 每次進入都重新讀取模式（商品頁點小卡會先設定成 K 線模式，見 core/nav.ts）
+    mode = (LS.get('stkMode') as 'live' | 'k') ?? 'live';
     bind(el);
     applyMode();
     initIntraday();
