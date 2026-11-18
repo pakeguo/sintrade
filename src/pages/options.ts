@@ -3,8 +3,12 @@ import {
   CandlestickSeries, ColorType, createChart, HistogramSeries, LineStyle,
   type IChartApi, type ISeriesApi, type IPriceLine, type UTCTimestamp,
 } from 'lightweight-charts';
-import { delta as bsDelta, impliedVol, yearsToExpiry } from '../bs';
+import { yearsToExpiry } from '../bs';
 import { hub, keyOf } from '../core/hub';
+import {
+  computeMetrics, type Expiry, fair, loadTxoExpiries, type Metrics, pcrLabel, type Row, rowsOf, skewLabel,
+  synthetic as synthetic0,
+} from '../core/optchain';
 import {
   $, avg, cls, compactMq, cssVar, esc, errText, fin, fmt, fmtP, fmtVol, isLive, LS, retry, session, sign, tpeToday,
 } from '../core/util';
@@ -14,9 +18,6 @@ import type { Page } from './page';
 const OWNER = 'options';
 const OWNER_SEL = 'options-detail';
 
-interface Expiry {
-  key: string; root: string; date: string; label: string; kind: string; list: OptContract[];
-}
 
 let expiries: Expiry[] = [];
 let cur: Expiry | null = null;
@@ -83,122 +84,13 @@ const TEMPLATE = `
   </main>
 `;
 
-// ───────────────────────── 核心計算 ─────────────────────────
-/** 可用於計算的「公平價」：五檔中價優先（價差合理時），否則最近成交價 */
-function fair(code: string): number {
-  const x = hub.quotes.get(code);
-  if (!x) return NaN;
-  const b = x.bids[0]?.[0], a = x.asks[0]?.[0];
-  if (b > 0 && a > 0 && a >= b) {
-    const mid = (a + b) / 2;
-    if (a - b <= Math.max(mid * 0.25, 2)) return mid;
-  }
-  return x.last;
-}
-
-interface Row { k: number; c?: OptContract; p?: OptContract }
-
-function rowsOf(e: Expiry): Row[] {
-  const m = new Map<number, Row>();
-  for (const o of e.list) {
-    const r = m.get(o.strike) ?? { k: o.strike };
-    if (o.right === 'C') r.c = o; else r.p = o;
-    m.set(o.strike, r);
-  }
-  return [...m.values()].sort((a, b) => a.k - b.k);
-}
-
-let rowsCache: { e: Expiry; rows: Row[] } | null = null;
-function rows(): Row[] {
-  if (!cur) return [];
-  if (rowsCache?.e !== cur) rowsCache = { e: cur, rows: rowsOf(cur) };
-  return rowsCache.rows;
-}
-
-function futLast() { return hub.quotes.get(hub.futKey)?.last ?? NaN; }
-
-/** 合成期貨 F = K + C − P（取最接近價平的 3 檔平均），這是該到期的真正標的價格 */
-function synthetic(): number {
-  const base = fin(futLast()) ? futLast() : hub.idx?.close ?? NaN;
-  if (!fin(base)) return NaN;
-  const rs = rows().filter((r) => r.c && r.p)
-    .sort((a, b) => Math.abs(a.k - base) - Math.abs(b.k - base)).slice(0, 3);
-  const vals = rs.map((r) => r.k + fair(r.c!.code) - fair(r.p!.code)).filter(fin);
-  if (!vals.length) return base;
-  return vals.reduce((s, v) => s + v, 0) / vals.length;
-}
-
-interface Metrics {
-  F: number; T: number; atm?: Row; straddle: number; atmIV: number; skew: number;
-  pcr: number; callVol: number; putVol: number; maxCall?: Row; maxPut?: Row;
-  iv: Map<string, number>; dl: Map<string, number>; maxVol: number;
-}
-
-function metrics(): Metrics {
-  const F = synthetic();
-  const T = cur ? yearsToExpiry(cur.date) : NaN;
-  const all = rows();
-  const iv = new Map<string, number>(), dl = new Map<string, number>();
-  let callVol = 0, putVol = 0, maxVol = 0;
-  let maxCall: Row | undefined, maxPut: Row | undefined;
-  for (const r of all) {
-    for (const o of [r.c, r.p]) {
-      if (!o) continue;
-      const v = hub.quotes.get(o.code)?.vol ?? 0;
-      if (o.right === 'C') { callVol += v; if (!maxCall || v > (hub.quotes.get(maxCall.c!.code)?.vol ?? 0)) maxCall = r; }
-      else { putVol += v; if (!maxPut || v > (hub.quotes.get(maxPut.p!.code)?.vol ?? 0)) maxPut = r; }
-      if (v > maxVol) maxVol = v;
-      const s = impliedVol(fair(o.code), F, o.strike, T, o.right);
-      iv.set(o.code, s);
-      if (fin(s)) dl.set(o.code, bsDelta(F, o.strike, T, s, o.right));
-    }
-  }
-  const atm = all.filter((r) => r.c && r.p).sort((a, b) => Math.abs(a.k - F) - Math.abs(b.k - F))[0];
-  const straddle = atm ? fair(atm.c!.code) + fair(atm.p!.code) : NaN;
-  const atmIV = atm ? avg([iv.get(atm.c!.code)!, iv.get(atm.p!.code)!]) : NaN;
-  // 25 Delta 偏斜：Put(Δ≈−0.25) IV − Call(Δ≈+0.25) IV
-  const near = (right: 'C' | 'P', target: number) => {
-    let best: string | undefined, bd = 1;
-    for (const [code, d] of dl) {
-      if ((right === 'C') !== d > 0) continue;
-      if (Math.abs(d - target) < bd) { bd = Math.abs(d - target); best = code; }
-    }
-    return best && bd < 0.12 ? iv.get(best)! : NaN;
-  };
-  const skew = (near('P', -0.25) - near('C', 0.25)) * 100;
-  return {
-    F, T, atm, straddle, atmIV, skew, pcr: callVol ? putVol / callVol : NaN,
-    callVol, putVol, maxCall, maxPut, iv, dl, maxVol,
-  };
-}
-
+// ───────────────────────── 核心計算（共用：core/optchain.ts） ─────────────────────────
+const rows = (): Row[] => (cur ? rowsOf(cur) : []);
+const synthetic = () => synthetic0(rows());
+const metrics = (): Metrics => computeMetrics(cur);
 
 async function loadExpiries() {
-  const roots = await hub.be.optionRoots();
-  // 臺指選擇權家族：月選 TXO + 各週選（名稱為「臺指選擇權…」或 TX1–TX5）
-  const fam = roots.filter((r) => r.root === 'TXO' || /^TX[1-5]$/.test(r.root) || r.name.startsWith('臺指選擇權'));
-  const lists = await Promise.all(fam.map((r) => hub.be.optionChain(r.root).catch((e) => {
-    if (r.root === 'TXO') throw e; // 月選都拿不到，代表 server 還沒就緒 → 交給 retry
-    return [] as OptContract[];
-  })));
-  const groups = new Map<string, Expiry>();
-  for (const list of lists) {
-    for (const o of list) {
-      if (!isLive(o.delivery_date)) continue;
-      const key = `${o.root}:${o.delivery_date}`;
-      let g = groups.get(key);
-      if (!g) {
-        const wd = new Date(o.delivery_date + 'T00:00:00Z').getUTCDay();
-        const kind = o.root === 'TXO' ? '月選' : wd === 3 ? '週三' : wd === 5 ? '週五' : '週選';
-        const [, m, d] = o.delivery_date.split('-');
-        g = { key, root: o.root, date: o.delivery_date, kind, label: `${+m}/${+d}`, list: [] };
-        groups.set(key, g);
-      }
-      g.list.push(o);
-    }
-  }
-  expiries = [...groups.values()].filter((g) => g.list.length >= 10)
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.root === 'TXO' ? 1 : -1)).slice(0, 8);
+  expiries = await loadTxoExpiries();
   const saved = LS.get('expiryRoot');
   cur = expiries.find((e) => e.root === saved) ?? expiries[0] ?? null;
 }
@@ -287,11 +179,11 @@ function renderCards(m: Metrics) {
   // 6. IV
   const ivTxt = fin(m.atmIV) ? (m.atmIV * 100).toFixed(1) + '%' : '—';
   const skTxt = fin(m.skew) ? `${m.skew > 0 ? '+' : ''}${m.skew.toFixed(1)}` : '—';
-  const skLbl = !fin(m.skew) ? '' : m.skew > 3 ? '避險需求強' : m.skew < 0 ? 'Call 追價' : '正常';
+  const skLbl = skewLabel(m.skew);
   card('c-iv', '價平 IV', ivTxt, `偏斜 <b>${skTxt}</b> ${skLbl}`, '',
     '價平隱含波動率：選擇權貴或便宜的溫度計。偏斜 = 25Δ Put IV − 25Δ Call IV，越大代表市場越願意花錢買下跌保護。');
   // 7. P/C
-  const pcLbl = !fin(m.pcr) ? '' : m.pcr > 1.2 ? 'Put 量明顯多' : m.pcr < 0.8 ? 'Call 量明顯多' : '均衡';
+  const pcLbl = pcrLabel(m.pcr);
   const cw = m.callVol + m.putVol ? (m.callVol / (m.callVol + m.putVol)) * 100 : 50;
   card('c-pcr', 'P/C 成交量比', fin(m.pcr) ? m.pcr.toFixed(2) : '—',
     `${pcLbl}<div class="pcbar"><i style="width:${cw}%"></i></div>

@@ -1,6 +1,7 @@
 // 透過本機 shioaji server（HTTP API + SSE）取得資料。
 // 金鑰與登入由 shioaji server 的 .env 處理，前端完全不碰金鑰。
 import type {
+  Account, ComponentsProjection, ComponentsUpdate,
   Backend, Bar, BidAsk, Contract, Handlers, IndexQuote, Info, QuoteType,
   FutContract, OptContract, OptRoot, ScannerType, ScanRow, SecType, Snap, Tick,
 } from './types';
@@ -47,6 +48,7 @@ export class LiveBackend implements Backend {
   readonly kind = 'live' as const;
   private es: EventSource | null = null;
   private subs = new Map<string, { c: Contract; q: QuoteType }>();
+  private enriched = new Map<string, ComponentsProjection>();
   private retry = 1000;
   private lastBeat = 0;
 
@@ -84,6 +86,7 @@ export class LiveBackend implements Backend {
           code: String(s.code), open: num(s.open), high: num(s.high), low: num(s.low),
           close: num(s.close), change_price: num(s.change_price),
           total_volume: num(s.total_volume), total_amount: num(s.total_amount),
+          buy_price: num(s.buy_price), sell_price: num(s.sell_price),
         });
       }
     }
@@ -165,6 +168,31 @@ export class LiveBackend implements Backend {
       }));
   }
 
+  accounts() {
+    return req<Account[]>('GET', '/auth/accounts');
+  }
+
+  /** 帳務唯讀查詢：path 例如 'margin'、'position_unit'、'profit_loss' */
+  portfolio<T>(path: string, body: Record<string, unknown>) {
+    if (!/^[a-z_]+$/.test(path)) throw new Error('bad portfolio path');
+    return req<T>('POST', `/portfolio/${path}`, body);
+  }
+
+  private ixBody(p: ComponentsProjection) {
+    return { index: { security_type: 'IND', exchange: 'TSE', code: 'IX0001', target_code: null }, projection: p };
+  }
+  async subscribeComponents(p: ComponentsProjection) {
+    const k = 'components:' + JSON.stringify(p);
+    if (this.enriched.has(k)) return;
+    this.enriched.set(k, p);
+    await req('POST', '/stream/subscribe/index_components', this.ixBody(p)).catch((e) => { this.enriched.delete(k); throw e; });
+  }
+  async unsubscribeComponents(p: ComponentsProjection) {
+    const k = 'components:' + JSON.stringify(p);
+    if (!this.enriched.delete(k)) return;
+    await req('POST', '/stream/unsubscribe/index_components', this.ixBody(p)).catch(() => undefined);
+  }
+
   private key(c: Contract, q: QuoteType) {
     return `${c.security_type}:${c.code}:${q}`;
   }
@@ -204,6 +232,9 @@ export class LiveBackend implements Backend {
           const all = [...this.subs.values()];
           this.subs.clear();
           for (const s of all) this.subscribe(s.c, s.q).catch(() => undefined);
+          const ens = [...this.enriched.values()];
+          this.enriched.clear();
+          for (const p of ens) this.subscribeComponents(p).catch(() => undefined);
         }
       };
       es.onerror = () => {
@@ -241,10 +272,20 @@ export class LiveBackend implements Backend {
       on('quote_idx', (d) => h.index({
         code: String(d.code), t: toSec(String(d.Date), String(d.Time)),
         close: num(d.Close), reference: num(d.Reference), open: num(d.Open),
-        high: num(d.High), low: num(d.Low), amountSum: num(d.AmountSum),
+        high: num(d.High), low: num(d.Low), amountSum: num(d.AmountSum), prevAmountSum: num(d.PrevAmountSum),
         raise: num(d.Raise), raiseStop: num(d.RaiseStop), fall: num(d.Fall),
         fallStop: num(d.FallStop), flat: num(d.Flat),
       }));
+      on('index_components', (d) => {
+        const entries = Array.isArray(d.entries) ? (d.entries as Record<string, unknown>[]).map((e) => ({
+          code: String(e.code), category: String(e.category ?? ''), price: num(e.price), reference: num(e.reference),
+          pct: num(e.pct_chg), value: num(e.value), weightPpm: num(e.reference_weight_ppm),
+        })) : undefined;
+        const groups = Array.isArray(d.groups) ? (d.groups as Record<string, unknown>[]).map((g) => ({
+          category: String(g.category), name: String(g.name ?? g.category), count: num(g.item_count), value: num(g.value),
+        })) : undefined;
+        h.components({ projection: d.projection as ComponentsProjection, entries, groups, simtrade: Boolean(d.simtrade) } as ComponentsUpdate);
+      });
       on('heartbeat', () => h.status('live'));
     };
     open();

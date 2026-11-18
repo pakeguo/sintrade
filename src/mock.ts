@@ -2,6 +2,7 @@
 // 只用於預覽介面（網址加 ?demo=1，或連不到 server 時自動切換）。
 import { price as bsPrice, yearsToExpiry } from './bs';
 import type {
+  Account, ComponentEntry, ComponentsProjection, GroupEntry,
   Backend, Bar, Contract, FutContract, Handlers, Info, OptContract, OptRoot, QuoteType, ScanRow, Snap, Tick,
 } from './types';
 
@@ -27,6 +28,22 @@ function thirdWed(y: number, m: number): Date {
 }
 
 const MONTH_CODE = 'ABCDEFGHIJKL';
+
+// DEMO 權值股：代碼、名稱、產業代碼、權重（ppm）、參考價
+const STOCKS: [string, string, string, number, number][] = [
+  ['2330', '台積電', '24', 416000, 1450], ['2317', '鴻海', '31', 52000, 220], ['2454', '聯發科', '24', 41000, 1400],
+  ['2308', '台達電', '28', 28000, 680], ['2382', '廣達', '25', 17000, 290], ['2881', '富邦金', '17', 16000, 92],
+  ['2891', '中信金', '17', 15000, 45], ['3711', '日月光投控', '24', 14000, 230], ['2882', '國泰金', '17', 13000, 66],
+  ['2412', '中華電', '27', 12000, 128], ['2303', '聯電', '24', 10000, 48], ['2886', '兆豐金', '17', 9500, 41],
+  ['2884', '玉山金', '17', 9000, 30], ['2345', '智邦', '27', 8800, 980], ['3017', '奇鋐', '25', 8500, 1100],
+  ['2357', '華碩', '25', 8000, 620], ['6669', '緯穎', '25', 7800, 2900], ['1216', '統一', '18', 7500, 78],
+  ['2885', '元大金', '17', 7200, 34], ['3231', '緯創', '25', 7000, 120], ['2892', '第一金', '17', 6500, 28],
+  ['2603', '長榮', '15', 6200, 210], ['2002', '中鋼', '20', 5000, 21], ['1301', '台塑', '3', 4500, 40],
+];
+const GROUPS: [string, string][] = [
+  ['24', '半導體業'], ['28', '電子零組件業'], ['25', '電腦及週邊設備業'], ['17', '金融保險'], ['31', '其他電子業'],
+  ['27', '通信網路業'], ['26', '光電業'], ['15', '航運業'], ['3', '塑膠工業'], ['20', '鋼鐵工業'], ['18', '貿易百貨'], ['5', '電機機械'],
+];
 
 export class DemoBackend implements Backend {
   readonly kind = 'demo' as const;
@@ -80,6 +97,7 @@ export class DemoBackend implements Backend {
   async contractInfo(c: Contract): Promise<Info> {
     const l = this.get(c);
     const names: Record<string, string> = { IX0001: '發行量加權股價指數', TXFR1: '臺股期貨 近月' };
+    for (const [code, name] of STOCKS) names[code] = name;
     const name = names[c.code] ?? l?.opt?.name ?? c.code;
     const ref = l?.ref ?? NaN;
     return { name, reference: ref, limit_up: ref * 1.1, limit_down: ref * 0.9 };
@@ -97,7 +115,7 @@ export class DemoBackend implements Backend {
       if (!l) return [];
       return [{
         code: c.code, open: l.open, high: l.high, low: l.low, close: l.last,
-        change_price: l.last - l.ref, total_volume: l.totalVol, total_amount: 0,
+        change_price: l.last - l.ref, total_volume: l.totalVol, total_amount: 0, buy_price: NaN, sell_price: NaN,
       }];
     });
   }
@@ -136,6 +154,80 @@ export class DemoBackend implements Backend {
         delivery_date: ymd(d), delivery_month: ymd(d).slice(0, 7).replace('-', '') };
     };
     return [mk(t.getUTCFullYear(), t.getUTCMonth()), mk(t.getUTCFullYear(), t.getUTCMonth() + 1)];
+  }
+
+  // ── 帳務（假資料） ──
+  async accounts(): Promise<Account[]> {
+    return [
+      { account_type: 'F', broker_id: 'F002000', account_id: '0000001', signed: true },
+      { account_type: 'S', broker_id: '9A9B', account_id: '0000002', signed: true },
+    ];
+  }
+  async portfolio<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    const type = body.account_type;
+    const F = this.F;
+    if (path === 'margin') {
+      const fpnl = (F - 27700) * 200 * 2;
+      return { equity: 1_250_000 + fpnl, equity_amount: 1_250_000 + fpnl, available_margin: 820_000 + fpnl,
+        initial_margin: 430_000, maintenance_margin: 330_000, risk_indicator: (1_250_000 + fpnl) / 330_000 * 100,
+        future_open_position: fpnl, option_open_position: 12_500, today_balance: 1_250_000, yesterday_balance: 1_230_000 } as T;
+    }
+    if (path === 'position_unit' && type === 'F') {
+      return [
+        { id: 0, code: this.futCode, direction: 'Buy', quantity: 2, price: 27700, last_price: F, pnl: (F - 27700) * 200 * 2 },
+        { id: 1, code: 'TXO202612' + '28000C', direction: 'Sell', quantity: 5, price: 180, last_price: 155, pnl: 25 * 50 * 5 },
+      ] as T;
+    }
+    if (path === 'position_unit' && type === 'S') {
+      const tsmc = this.stockPx.get('2330') ?? 1450;
+      return [
+        { id: 0, code: '2330', direction: 'Buy', quantity: 2, price: 1380, last_price: tsmc, pnl: (tsmc - 1380) * 2000 },
+        { id: 1, code: '2884', direction: 'Buy', quantity: 10, price: 31.5, last_price: 30.2, pnl: (30.2 - 31.5) * 10000 },
+      ] as T;
+    }
+    if (path === 'profit_loss') {
+      return (type === 'F'
+        ? [{ id: 0, code: this.futCode, quantity: 1, pnl: 8_400, date: tpeNow().toISOString().slice(0, 10) }]
+        : [{ id: 0, code: '2603', quantity: 1, pnl: -3_200, date: tpeNow().toISOString().slice(0, 10) }]) as T;
+    }
+    return [] as T;
+  }
+
+  // ── 權值股／類股加值串流（假資料） ──
+  private stockPx = new Map<string, number>();
+  private compSubs = new Map<string, ComponentsProjection>();
+  async subscribeComponents(p: ComponentsProjection) { this.compSubs.set(JSON.stringify(p), p); }
+  async unsubscribeComponents(p: ComponentsProjection) { this.compSubs.delete(JSON.stringify(p)); }
+  private emitComponents() {
+    const h = this.h!;
+    const drift = (this.spot - this.spotRef) / this.spotRef;
+    const entries: ComponentEntry[] = STOCKS.map(([code, , cat, w, ref]) => {
+      const prev = this.stockPx.get(code) ?? ref * (1 + drift * (0.6 + Math.random()));
+      const price = +(prev * (1 + (Math.random() - 0.5) * 0.002)).toFixed(ref > 100 ? 0 : 2);
+      this.stockPx.set(code, price);
+      const pct = (price / ref - 1) * 100;
+      return { code, category: cat, price, reference: ref, pct, weightPpm: w, value: this.spotRef * (w / 1e6) * (price / ref - 1) };
+    });
+    for (const p of this.compSubs.values()) {
+      if (p.kind === 'ranking') {
+        let list = [...entries];
+        if (p.metric === 'weight') list.sort((a, b) => b.weightPpm - a.weightPpm);
+        else if (p.order === 'positive_desc') list = list.filter((e) => e.value > 0).sort((a, b) => b.value - a.value);
+        else if (p.order === 'negative_asc') list = list.filter((e) => e.value < 0).sort((a, b) => a.value - b.value);
+        else list.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+        h.components({ projection: p, entries: list.slice(0, p.limit).map((e) => ({ ...e, value: p.metric === 'weight' ? e.weightPpm / 1e4 : e.value })) });
+      } else {
+        const groups: GroupEntry[] = GROUPS.map(([cat, name]) => {
+          const es = entries.filter((e) => e.category === cat);
+          const w = es.reduce((s, e) => s + e.weightPpm, 0) / 1e4 + 1.5;
+          const contrib = es.reduce((s, e) => s + e.value, 0) + (Math.random() - 0.5) * 2;
+          const perf = w ? (contrib / this.spotRef) / (w / 100) * 100 : 0;
+          const value = p.metric === 'weight' ? w : p.metric === 'contribution' ? contrib : perf;
+          return { category: cat, name, count: Math.max(es.length * 6, 7), value };
+        });
+        h.components({ projection: p, groups });
+      }
+    }
   }
 
   async optionRoots(): Promise<OptRoot[]> {
@@ -203,10 +295,16 @@ export class DemoBackend implements Backend {
     this.h = h;
     h.status('demo');
     setInterval(() => this.step(), 400);
+    setInterval(() => this.emitComponents(), 1000);
   }
 
   private step() {
     const h = this.h!;
+    // 權值股／庫存股：有訂閱就送 tick
+    for (const [code, price] of this.stockPx) {
+      if (!this.subs.has(`${code}:Tick`) || Math.random() > 0.3) continue;
+      h.tick({ code, t: nowSec(), price, vol: 1 + Math.floor(Math.random() * 20), totalVol: NaN, side: Math.random() > 0.5 ? 1 : 2 });
+    }
     this.spot += (Math.random() - 0.5) * 6 + (this.spotRef + 150 - this.spot) * 0.001;
     this.basis += (Math.random() - 0.5) * 0.6;
     const t = nowSec();
@@ -214,7 +312,12 @@ export class DemoBackend implements Backend {
     ix.last = this.spot; ix.high = Math.max(ix.high, ix.last); ix.low = Math.min(ix.low, ix.last);
     h.index({
       code: 'IX0001', t, close: ix.last, reference: ix.ref, open: ix.open, high: ix.high, low: ix.low,
-      amountSum: 2.85e11, raise: 512, raiseStop: 9, fall: 388, fallStop: 2, flat: 120,
+      amountSum: 2.85e11, prevAmountSum: 3.1e11, raise: 512, raiseStop: 9, fall: 388, fallStop: 2, flat: 120,
+    });
+    const otc = 262 + (this.spot - this.spotRef) / 120;
+    h.index({
+      code: 'IX0043', t, close: otc, reference: 261, open: 261, high: otc + 0.6, low: 260.2,
+      amountSum: 9.2e10, prevAmountSum: 8.8e10, raise: 420, raiseStop: 6, fall: 330, fallStop: 1, flat: 95,
     });
     for (const [code, l] of this.live) {
       if (code === 'IX0001') continue;

@@ -1,7 +1,7 @@
 // 行情中心：所有頁面共用的連線、報價快取、訂閱管理（引用計數）、加權指數與台指期近月（含自動換月）
 import { LiveBackend } from '../api';
 import { DemoBackend } from '../mock';
-import type { Backend, BidAsk, ConnStatus, Contract, IndexQuote, QuoteType, Tick } from '../types';
+import type { Backend, BidAsk, ComponentsUpdate, ConnStatus, Contract, IndexQuote, QuoteType, Tick } from '../types';
 import { fin, isLive } from './util';
 
 export type Env = 'sim' | 'prod' | 'demo';
@@ -11,6 +11,7 @@ export interface Q {
   last: number; ref: number; vol: number; high: number; low: number; open: number;
   bids: [number, number][]; asks: [number, number][];
   bidSideVol: number; askSideVol: number;  // 內外盤累計量
+  snapBid: number; snapAsk: number;        // 快照帶的最佳買賣價（沒有即時五檔時用）
   flash: number; dir: 0 | 1 | -1;           // 最近一次價格變動的時間與方向（畫面閃爍用）
 }
 
@@ -21,6 +22,8 @@ interface Events {
   status: ConnStatus;
   /** 台指期換月：{ next, prev } */
   fut: { next: Contract; prev: Contract | null };
+  /** 權值股／類股加值串流 */
+  components: ComponentsUpdate;
   /** 任何報價有變動（頁面據此標記需要重繪） */
   change: void;
 }
@@ -33,6 +36,8 @@ class Hub {
   status: ConnStatus = 'connecting';
   readonly quotes = new Map<string, Q>();
   idx: IndexQuote | null = null;
+  /** 所有收到的指數（IX0001 加權、IX0043 櫃買…） */
+  readonly indices = new Map<string, IndexQuote>();
   ixContract: Contract = { security_type: 'IND', exchange: 'TSE', code: 'IX0001' };
   fut: Contract | null = null;   // 目前的台指期近月（自行挑選，不依賴 TXFR1）
   futKey = '';
@@ -57,7 +62,7 @@ class Hub {
     let x = this.quotes.get(code);
     if (!x) {
       x = { last: NaN, ref: NaN, vol: 0, high: NaN, low: NaN, open: NaN, bids: [], asks: [],
-        bidSideVol: NaN, askSideVol: NaN, flash: 0, dir: 0 };
+        bidSideVol: NaN, askSideVol: NaN, snapBid: NaN, snapAsk: NaN, flash: 0, dir: 0 };
       this.quotes.set(code, x);
     }
     return x;
@@ -83,8 +88,14 @@ class Hub {
     this.be.connect({
       tick: (t) => this.onTick(t),
       bidask: (b) => this.onBidAsk(b),
-      index: (i) => { if (i.code === 'IX0001') { this.idx = i; this.emit('index', i); this.emit('change', undefined); } },
+      index: (i) => {
+        this.indices.set(i.code, i);
+        if (i.code === 'IX0001') this.idx = i;
+        this.emit('index', i);
+        this.emit('change', undefined);
+      },
       status: (s) => { this.status = s; this.emit('status', s); },
+      components: (u) => { if (!u.simtrade) { this.emit('components', u); this.emit('change', undefined); } },
     });
 
     // 加權指數：全程訂閱（每一頁的上方都會用到）
@@ -168,6 +179,7 @@ class Hub {
         if (fin(r) && r > 0) x.ref = r;
         x.vol = Math.max(x.vol, s.total_volume || 0);
         x.high = s.high; x.low = s.low; x.open = s.open;
+        x.snapBid = s.buy_price; x.snapAsk = s.sell_price;
       }
       this.emit('change', undefined);
     } catch (e) { console.warn('snapshots', e); }

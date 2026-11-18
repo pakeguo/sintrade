@@ -23,6 +23,8 @@ export interface Snap {
   change_price: number;
   total_volume: number;
   total_amount: number;
+  buy_price: number;
+  sell_price: number;
 }
 
 /** 時間一律用「台北當地時間當作 UTC」的秒數，圖表直接顯示台北時間 */
@@ -67,6 +69,7 @@ export interface IndexQuote {
   high: number;
   low: number;
   amountSum: number;
+  prevAmountSum?: number;
   raise: number;
   raiseStop: number;
   fall: number;
@@ -115,6 +118,29 @@ export interface OptRoot {
   name: string;
 }
 
+export interface Account {
+  account_type: 'S' | 'F' | 'H' | string;
+  broker_id: string;
+  account_id: string;
+  signed?: boolean;
+}
+
+/** 成分股／類股加值串流的投影方式（docs/ai/shioaji-api.md「即時加值資料」） */
+export type ComponentsProjection =
+  | { kind: 'ranking'; target: 'component'; metric: 'contribution' | 'pct_chg' | 'weight' | 'amount'; order: string; limit: number; group?: string }
+  | { kind: 'group_metric'; metric: 'contribution' | 'weight' | 'weighted_performance' | 'equal_weight_performance' | 'amount' | 'amount_share' | 'breadth' };
+
+export interface ComponentEntry {
+  code: string; category: string; price: number; reference: number; pct: number; value: number; weightPpm: number;
+}
+export interface GroupEntry { category: string; name: string; count: number; value: number }
+export interface ComponentsUpdate {
+  projection: ComponentsProjection;
+  entries?: ComponentEntry[];
+  groups?: GroupEntry[];
+  simtrade?: boolean;
+}
+
 export type ConnStatus = 'connecting' | 'live' | 'down' | 'demo';
 
 export interface Handlers {
@@ -122,6 +148,7 @@ export interface Handlers {
   bidask: (b: BidAsk) => void;
   index: (q: IndexQuote) => void;
   status: (s: ConnStatus) => void;
+  components: (u: ComponentsUpdate) => void;
 }
 
 export interface Backend {
@@ -139,5 +166,10 @@ export interface Backend {
   futuresList(root: string): Promise<FutContract[]>;
   optionRoots(): Promise<OptRoot[]>;
   optionChain(root: string): Promise<OptContract[]>;
+  /** 帳戶清單與帳務查詢（唯讀） */
+  accounts(): Promise<Account[]>;
+  portfolio<T>(path: string, body: Record<string, unknown>): Promise<T>;
+  subscribeComponents(p: ComponentsProjection): Promise<void>;
+  unsubscribeComponents(p: ComponentsProjection): Promise<void>;
   connect(h: Handlers): void;
 }
