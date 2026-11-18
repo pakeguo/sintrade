@@ -34,6 +34,18 @@
 - `quote_idx`：首字大寫 `Close`、`Reference`、`Raise`、`Fall`、`RaiseStop`、`FallStop`…（只有日盤）。
 - 連續月訂閱時 tick 回報的 `code` 是實際月份代碼（見 pitfalls #2）。
 
+## 即時加值資料（權值股動態規劃用）
+
+文件：`zh/tutor/market_data/streaming/enriched/index.md`。只支援 `IX0001`（加權）與 `IX0043`（櫃買）。
+
+| 訂閱 | body | SSE 事件 |
+| --- | --- | --- |
+| `POST /stream/subscribe/calculated_index` | `{"index": <合約>}` | `calculated_index`：自算指數，一秒多筆，比官方指數快 |
+| `POST /stream/subscribe/index_components` | `{"index": <合約>, "projection": {"kind":"ranking","target":"component","metric":"contribution","order":"abs_desc","limit":10,"group":"24"}}` | `index_components`：成分股貢獻點數排行；`entries[]` 含 `code`、`value`（貢獻點數）、`price`、`pct_chg`、`reference_weight_ppm`（權重） |
+| 同上，`projection: {"kind":"group_metric","metric":"contribution"}` | | 產業類股貢獻點數 |
+
+取消訂閱用相同 body 呼叫 `/stream/unsubscribe/...`。`group` 可省略（全市場）。
+
 ## 帳務（尚未使用，帳務頁規劃用）
 
 皆為 `POST`，body 可帶 `{account_type: "S"|"F", broker_id, account_id}`，空物件 `{}` 用預設帳戶。

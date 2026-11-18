@@ -3,11 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>期權看盤</title>
+  <title>看盤</title>
 </head>
 <body>
   <header>
-    <div class="brand">期權看盤 <span>臺指選擇權</span></div>
+    <div class="brand">看盤</div>
+    <nav id="tabs" class="tabs"></nav>
+    <div id="ticker" class="ticker"></div>
     <span id="env" class="env">…</span>
     <span id="conn" class="conn connecting">連線中…</span>
     <span id="session" class="session">—</span>
@@ -16,57 +18,7 @@
   <div id="banner" class="banner" hidden>
     連不到本機 shioaji server（127.0.0.1:8080），目前顯示 <b>DEMO 假資料</b>。請先執行 <code>shioaji server start</code> 後重新整理。
   </div>
-
-  <section class="cards">
-    <div class="card" id="c-idx"></div>
-    <div class="card" id="c-fut"></div>
-    <div class="card" id="c-exp"></div>
-    <div class="card" id="c-atm"></div>
-    <div class="card hero" id="c-move"></div>
-    <div class="card" id="c-iv"></div>
-    <div class="card" id="c-pcr"></div>
-    <div class="card" id="c-wall"></div>
-  </section>
-
-  <section class="bar">
-    <div id="expiries" class="expiries"></div>
-    <div class="tools">
-      <label id="range">檔數 <select>
-        <option value="6">±6</option><option value="8">±8</option><option value="10">±10</option>
-        <option value="14">±14</option><option value="18">±18</option>
-      </select></label>
-      <button id="center-btn" title="快捷鍵 C">置中價平</button>
-      <button id="fut-btn" title="快捷鍵 F">看台指期</button>
-    </div>
-  </section>
-
-  <main>
-    <div class="chain-wrap">
-      <table class="chain">
-        <thead>
-          <tr class="sidehead"><th id="sh-c" colspan="5" class="up">買權 CALL</th><th></th><th id="sh-p" colspan="5" class="down">賣權 PUT</th></tr>
-          <tr>
-            <th>成交量</th><th>IV%</th><th>Delta</th><th>漲跌</th><th>成交</th>
-            <th>履約價</th>
-            <th>成交</th><th>漲跌</th><th>Delta</th><th>IV%</th><th>成交量</th>
-          </tr>
-        </thead>
-        <tbody id="chain-body"><tr><td colspan="11" class="empty">載入中…</td></tr></tbody>
-      </table>
-      <div class="legend">
-        <span><i class="lg band"></i>預期區間內</span>
-        <span><i class="lg itm"></i>價內</span>
-        <span><i class="lg wall"></i>最大量（壓力/支撐）</span>
-        <span>點任一價格看走勢與五檔<span class="kbd">　←/→ 切換到期　C 置中</span></span>
-      </div>
-    </div>
-    <aside class="detail">
-      <div id="d-head"></div>
-      <div id="chart" class="chart"></div>
-      <div class="booktitle">五檔</div>
-      <div id="book" class="book"></div>
-    </aside>
-  </main>
+  <div id="page" class="page"><div class="boot-msg">啟動中…</div></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

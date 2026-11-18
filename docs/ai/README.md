@@ -21,17 +21,36 @@
 - 前端：Vite + TypeScript（無框架）+ lightweight-charts 5，`vite-plugin-singlefile` 打包成單一 HTML。
 - 部署：`npm.cmd run deploy` = 建置 + `curl` 上傳到 server 的 `/api/v1/apps/mywatch`。
 
-## 程式結構（2026-11-18）
+## 程式結構（2026-11-18 架構重整後）
 
-| 檔案 | 職責 |
-| --- | --- |
-| `src/types.ts` | 資料型別與 `Backend` 介面 |
-| `src/api.ts` | `LiveBackend`：HTTP + SSE 串接、斷線重連、自動重新訂閱 |
-| `src/mock.ts` | `DemoBackend`：假資料（`?demo=1` 或連不到 server 時） |
-| `src/bs.ts` | Black-76 定價、IV、Delta |
-| `src/main.ts` | 期權頁（目前唯一頁面）：指標計算、T 字報價、明細 |
-| `src/style.css` | 深色主題、紅漲綠跌、手機版面 |
-| `phone-server.mjs` | 手機唯讀轉接站 |
+```
+src/
+  main.ts            App 外框：頁籤路由（#/overview #/stocks #/options #/account）、全域報價列、連線狀態、時鐘
+  core/
+    hub.ts           行情中心：backend 選擇、SSE 事件 → 報價快取 Q、訂閱引用計數 acquire/release、
+                     加權指數、台指期近月與自動換月（pickFuture/setFuture/rollFuture）
+    util.ts          格式化、台北時間、交易時段 session()、到期判斷 isLive()、LS 儲存、retry()
+  pages/
+    page.ts          Page 介面：mount(el) / unmount()（離開頁面必須 releaseAll 退訂、清計時器）
+    options.ts       期權頁（完成）
+    overview.ts      總覽（藍圖，下一個實作）
+    account.ts       帳務（藍圖）
+    stocks.ts        個股（藍圖）
+    blueprint.ts     藍圖頁產生器
+  api.ts             LiveBackend：HTTP + SSE
+  mock.ts            DemoBackend：假資料（?demo=1）
+  bs.ts              Black-76
+  types.ts           型別與 Backend 介面
+  style.css          深色主題、紅漲綠跌、頁籤、手機版面
+phone-server.mjs     手機唯讀轉接站（白名單：行情＋帳務查詢；封鎖 /order/*）
+```
+
+### 規則
+
+- 頁面不可直接呼叫 `hub.be.subscribe`，一律用 `hub.acquire(owner, contract, types)`，unmount 時 `hub.releaseAll(owner)`。
+  shioaji 訂閱上限約 200，期權頁 ±10 檔就佔約 84 個。
+- 台指期一律用 `hub.fut` / `hub.futKey` / `hub.futName`，監聽 `hub.on('fut', …)` 處理換月。
+- 報價讀 `hub.quotes.get(code)`；有變動時 `hub.on('change')` 觸發，頁面自行節流重繪（目前 200ms）。
 
 ## 使用者環境
 

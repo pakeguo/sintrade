@@ -2,7 +2,7 @@
 //
 //   手機 ──▶ 這支程式（0.0.0.0:5180，需密碼）──▶ shioaji server（127.0.0.1:8080）
 //
-// - 只放行看盤需要的 API（商品檔、快照、K 線、即時行情串流）；下單、帳務、設定一律回 403
+// - 只放行看盤與帳務查詢的 API（商品檔、快照、K 線、即時行情、帳務唯讀）；下單與設定一律回 403
 // - 第一次連線要輸入密碼（.env 的 MW_PASSWORD），之後 30 天內免輸入
 // - 不需要安裝任何套件，只用 Node.js 內建模組
 //
@@ -50,6 +50,9 @@ const ALLOW = [
   ['POST', /^\/api\/v1\/data\/(snapshots|kbars|ticks|scanner)$/],
   ['POST', /^\/api\/v1\/stream\/(subscribe|unsubscribe)$/],
   ['GET', /^\/api\/v1\/stream\/data$/],
+  // 帳務（唯讀查詢；使用者決定手機也能完整看帳務，見 docs/ai/requirements.md 第 1 輪）
+  ['GET', /^\/api\/v1\/auth\/accounts$/],
+  ['POST', /^\/api\/v1\/portfolio\/(account_balance|margin|position_unit|position_detail|profit_loss|profit_loss_detail|profitloss_sum|settlements|trading_limits)$/],
 ];
 const allowed = (method, path) =>
   // 只接受單純的路徑字元，擋掉 ../、編碼字元（%2e 等）、反斜線與 // 這類繞過白名單的寫法
@@ -178,7 +181,7 @@ server.headersTimeout = 30_000;
 server.listen(PORT, '0.0.0.0', () => {
   const ips = Object.entries(networkInterfaces()).flatMap(([name, list]) =>
     (list || []).filter((i) => i.family === 'IPv4' && !i.internal).map((i) => ({ name, ip: i.address })));
-  console.log('\n📱 手機看盤轉接站已啟動（只開放看盤功能，下單／帳務已封鎖）\n');
+  console.log('\n📱 手機看盤轉接站已啟動（開放看盤與帳務查詢，下單已封鎖）\n');
   for (const { name, ip } of ips) {
     const tag = ip.startsWith('100.') ? '（Tailscale，出門在外用這個）' : '（同一個 Wi-Fi 用這個）';
     console.log(`   http://${ip}:${PORT}   ${tag}  [${name}]`);
