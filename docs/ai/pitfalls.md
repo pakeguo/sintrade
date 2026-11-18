@@ -67,6 +67,14 @@
 - 前端已加：遇 500/NotReady 自動重試並顯示說明（`retry()`）。
 - 查 log：`Get-Content "$env:USERPROFILE\.shioaji\logs\server-8080\server.*.log" -Tail 2000 | Select-String …`
 
+**換 API Key 時一定要做**：停 server → 改名 `token_pool` → 重啟。否則 server 會沿用舊 Key 的 token，又出現 401／NotReady。
+
+## 7a. 共用服務最後一個使用者離開時，要清掉「已訂閱」紀錄
+
+- `account.unuse()` 會 `hub.releaseAll('account')` 退訂，但 `mapped`／`stkSubs` 還記著「已訂閱」，
+  回到頁面時就不會重新訂閱 → 損益不再跳動。解法：unuse 時一併 `clear()`。
+- 寫新的共用服務（use/unuse）時照同一模式。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

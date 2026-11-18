@@ -32,13 +32,14 @@ src/
     util.ts          格式化、台北時間、交易時段 session()、到期判斷 isLive()、LS 儲存、retry()
     optchain.ts      臺指選擇權共用：到期日清單、T 字列、合成期貨、computeMetrics()（期權頁與總覽共用）
     components.ts    權值股前 20（權重快取於 localStorage）、產業類股（index_components 串流），use/unuse 引用計數
-    account.ts       帳務服務：15 秒查詢 margin/position_unit/profit_loss；證券庫存損益用即時 tick 計算
+    account.ts       帳務服務：15 秒查詢 margin/position_unit/profit_loss/settlements；
+                     期權部位代碼（TXO20261228000C）對應實際合約後即時計算損益；證券庫存用即時 tick
   pages/
     page.ts          Page 介面：mount(el) / unmount()（離開頁面必須 releaseAll 退訂、清計時器）
     options.ts       期權頁（完成）
     overview.ts      總覽（完成）：大盤｜台指期｜期權摘要、走勢疊圖、權值股前 10、類股熱力圖、帳戶三區
-    account.ts       帳務（藍圖，下一個實作）
-    stocks.ts        個股（藍圖）
+    account.ts       帳務（完成）：權益風險、組合 Greeks、期權部位、到期損益圖（SVG）、證券庫存、自選期間已實現損益
+    stocks.ts        個股（藍圖，下一個實作）
     blueprint.ts     藍圖頁產生器
   api.ts             LiveBackend：HTTP + SSE
   mock.ts            DemoBackend：假資料（?demo=1）
@@ -61,5 +62,6 @@ phone-server.mjs     手機唯讀轉接站（白名單：行情＋帳務查詢�
 - shioaji 以 `uv tool install` 安裝於 `%USERPROFILE%\.local\bin`（已加入使用者 PATH）。
 - PowerShell 執行原則會擋 `npm.ps1` → 一律用 `npm.cmd`。
 - API Key 權限：行情／資料、帳務、正式環境；綁定 IP；**無交易權限**。
+- 2026-11-18 換了新 API Key（加入證券帳戶授權）。換 Key 後要清 token 快取（pitfalls #7）。
 - 使用正式環境（`SJ_PRODUCTION=true`）。
 - GitHub repo：`pakeguo/sintrade`（private）。

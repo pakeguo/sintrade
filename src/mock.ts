@@ -174,7 +174,8 @@ export class DemoBackend implements Backend {
     }
     if (path === 'position_unit' && type === 'F') {
       return [
-        { id: 0, code: this.futCode, direction: 'Buy', quantity: 2, price: 27700, last_price: F, pnl: (F - 27700) * 200 * 2 },
+        { id: 0, code: this.futAlias || this.futCode, direction: 'Buy', quantity: 2, price: 27700, last_price: F, pnl: (F - 27700) * 200 * 2 },
+        { id: 2, code: 'TXO202612' + '27500P', direction: 'Buy', quantity: 3, price: 120, last_price: 95, pnl: -25 * 50 * 3 },
         { id: 1, code: 'TXO202612' + '28000C', direction: 'Sell', quantity: 5, price: 180, last_price: 155, pnl: 25 * 50 * 5 },
       ] as T;
     }
@@ -186,9 +187,23 @@ export class DemoBackend implements Backend {
       ] as T;
     }
     if (path === 'profit_loss') {
-      return (type === 'F'
-        ? [{ id: 0, code: this.futCode, quantity: 1, pnl: 8_400, date: tpeNow().toISOString().slice(0, 10) }]
-        : [{ id: 0, code: '2603', quantity: 1, pnl: -3_200, date: tpeNow().toISOString().slice(0, 10) }]) as T;
+      // 期間內每個交易日產生幾筆假的已實現損益（以日期為種子，重新整理數字不變）
+      const out: Record<string, unknown>[] = [];
+      const b = new Date(String(body.begin_date) + 'T00:00:00Z'), e = new Date(String(body.end_date) + 'T00:00:00Z');
+      for (let d = b; d <= e; d = new Date(d.getTime() + 86400_000)) {
+        if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
+        const seed = (d.getUTCDate() * 37 + d.getUTCMonth() * 11 + (type === 'F' ? 3 : 7)) % 23;
+        if (seed % 3 === 0) continue;
+        const date = d.toISOString().slice(0, 10);
+        out.push(type === 'F'
+          ? { id: out.length, code: seed % 2 ? 'TXFL6' : 'TXO202612' + (27600 + seed * 50) + 'C', quantity: 1 + (seed % 3), pnl: (seed - 11) * 1_900, date, direction: 'Buy' }
+          : { id: out.length, code: ['2603', '2884', '2317'][seed % 3], quantity: 1, pnl: (seed - 10) * 820, date, direction: 'Buy' });
+      }
+      return out as T;
+    }
+    if (path === 'settlements') {
+      const t = tpeNow().toISOString().slice(0, 10);
+      return [{ date: t, amount: -1_380_000, T: 0 }, { date: t, amount: 62_400, T: 1 }, { date: t, amount: 0, T: 2 }] as T;
     }
     return [] as T;
   }

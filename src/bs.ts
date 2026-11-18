@@ -46,3 +46,23 @@ export function yearsToExpiry(deliveryDate: string, nowMs = Date.now()): number 
   const exp = Date.UTC(y, m - 1, d, 5, 30);
   return Math.max(exp - nowMs, 60_000) / (365 * 24 * 3600 * 1000);
 }
+
+const npdf = (x: number) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+
+export interface Greeks { delta: number; gamma: number; theta: number; vega: number }
+
+/** 單一選擇權（每 1 單位標的）的 Greeks：theta 為「每天」、vega 為「IV 每 1 個百分點」 */
+export function greeks(F: number, K: number, T: number, vol: number, right: 'C' | 'P'): Greeks {
+  if (!(T > 0) || !(vol > 0) || !(F > 0)) {
+    return { delta: delta(F, K, T, vol, right), gamma: 0, theta: 0, vega: 0 };
+  }
+  const sq = Math.sqrt(T), sd = vol * sq;
+  const d1 = (Math.log(F / K) + 0.5 * sd * sd) / sd;
+  const n = npdf(d1);
+  return {
+    delta: delta(F, K, T, vol, right),
+    gamma: n / (F * sd),
+    theta: -(F * n * vol) / (2 * sq) / 365,
+    vega: (F * n * sq) / 100,
+  };
+}
