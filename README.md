@@ -124,6 +124,11 @@ shioaji server 只接受本機連線，所以多了一支「唯讀轉接站」`p
 
 > 如果 Tailscale 網址打不開，到「Windows 安全性 → 防火牆與網路保護 → 允許應用程式通過防火牆」，把 Node.js 的「公用」也勾起來。
 
+### 電腦也用轉接站開（自選清單電腦手機同步）
+
+自選股群組存在電腦上的 `mywatch-store.json`。電腦請改用 **http://localhost:5180** 開啟（本機免密碼），
+這樣電腦和手機看到的是同一份自選清單。用 `127.0.0.1:8080/apps/mywatch/` 開也能用，但自選清單只存在那個瀏覽器。
+
 ### 每天使用
 
 電腦上要開著兩個視窗：`shioaji server start`（在 `G:\sintrade`）和 `npm.cmd run phone`。手機加入主畫面（Safari 分享 →「加入主畫面」）會更像 App。

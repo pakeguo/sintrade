@@ -1,3 +1,5 @@
 node_modules
 dist
 .env
+mywatch-store.json
+mywatch-store.json.tmp

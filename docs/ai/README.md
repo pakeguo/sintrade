@@ -32,6 +32,8 @@ src/
     util.ts          格式化、台北時間、交易時段 session()、到期判斷 isLive()、LS 儲存、retry()
     optchain.ts      臺指選擇權共用：到期日清單、T 字列、合成期貨、computeMetrics()（期權頁與總覽共用）
     components.ts    權值股前 20（權重快取於 localStorage）、產業類股（index_components 串流），use/unuse 引用計數
+    store.ts         使用者設定（自選群組、大單門檻）：經 phone-server 開啟時存 mywatch-store.json（電腦手機同步），否則 localStorage
+    indicators.ts    toDaily/regroup、SMA、布林、RSI、VWAP、分價量表
     account.ts       帳務服務：15 秒查詢 margin/position_unit/profit_loss/settlements；
                      期權部位代碼（TXO20261228000C）對應實際合約後即時計算損益；證券庫存用即時 tick
   pages/
@@ -39,14 +41,16 @@ src/
     options.ts       期權頁（完成）
     overview.ts      總覽（完成）：大盤｜台指期｜期權摘要、走勢疊圖、權值股前 10、類股熱力圖、帳戶三區
     account.ts       帳務（完成）：權益風險、組合 Greeks、期權部位、到期損益圖（SVG）、證券庫存、自選期間已實現損益
-    stocks.ts        個股（藍圖，下一個實作）
+    stocks.ts        個股（完成）：自選群組（拖曳、同步）、盤中（分時+VWAP、五檔、內外盤、大單三級、逐筆）、
+                     K 線（日週月、MA、布林、RSI、分價量表）
     blueprint.ts     藍圖頁產生器
   api.ts             LiveBackend：HTTP + SSE
   mock.ts            DemoBackend：假資料（?demo=1）
   bs.ts              Black-76
   types.ts           型別與 Backend 介面
   style.css          深色主題、紅漲綠跌、頁籤、手機版面
-phone-server.mjs     手機唯讀轉接站（白名單：行情＋帳務查詢；封鎖 /order/*）
+phone-server.mjs     轉接站（白名單：行情＋帳務查詢；封鎖 /order/*）；/mw/store 設定同步；本機 127.0.0.1 免密碼
+                     → 建議電腦也用 http://localhost:5180 開啟，自選清單才會與手機同步
 ```
 
 ### 規則

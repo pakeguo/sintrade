@@ -89,7 +89,8 @@ export class DemoBackend implements Backend {
   async resolve(code: string): Promise<Contract> {
     code = code.toUpperCase();
     if (code === 'TXFR1') return { security_type: 'FUT', exchange: 'TAIFEX', code: 'TXFR1', target_code: this.futCode };
-    if (code.startsWith('IX')) return { security_type: 'IND', exchange: 'TSE', code };
+    if (code.startsWith('IX')) return { security_type: 'IND', exchange: code === 'IX0043' ? 'OTC' : 'TSE', code };
+    if (/^\d{4,6}[A-Z]?$/.test(code)) return { security_type: 'STK', exchange: 'TSE', code };
     for (const ch of this.chains.values()) { const o = ch.find((x) => x.code === code); if (o) return o; }
     throw new Error('DEMO 找不到商品 ' + code);
   }
@@ -106,7 +107,19 @@ export class DemoBackend implements Backend {
   private norm(code: string) { return code.startsWith('TXF') ? this.futCode : code; }
 
   private get(c: Contract): Live | undefined {
-    return this.live.get(this.norm(c.target_code ?? c.code));
+    const code = this.norm(c.target_code ?? c.code);
+    let l = this.live.get(code);
+    if (!l && /^\d{4,6}[A-Z]?$/.test(code)) {
+      // 個股：權值股用固定參考價，其他代碼用代碼算一個假的價位
+      const s = STOCKS.find((x) => x[0] === code);
+      const ref = s ? s[4] : 20 + (Number(code.slice(0, 4)) % 480);
+      const last = this.stockPx.get(code) ?? +(ref * (1 + (Math.random() - 0.45) * 0.03)).toFixed(ref > 100 ? 0 : 2);
+      this.stockPx.set(code, last);
+      l = this.mk({ security_type: 'STK', exchange: 'TSE', code }, ref, last);
+      l.totalVol = Math.floor(Math.random() * 30000) + 2000;
+      this.live.set(code, l);
+    }
+    return l;
   }
 
   async snapshots(cs: Contract[]): Promise<Snap[]> {
@@ -120,9 +133,10 @@ export class DemoBackend implements Backend {
     });
   }
 
-  async kbars(c: Contract): Promise<Bar[]> {
+  async kbars(c: Contract, from?: string, to?: string): Promise<Bar[]> {
     const l = this.get(c);
     if (!l) return [];
+    if (l.c.security_type === 'STK' && from && to) return this.stockBars(l, from, to);
     const now = tpeNow();
     const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000;
     const start = day + (8 * 60 + 46) * 60;
@@ -138,6 +152,51 @@ export class DemoBackend implements Backend {
       const lo = Math.max(0.1, Math.min(o, p) - Math.random() * vol);
       out.unshift({ t: (end > start ? end : start + 299 * 60) - (n - 1 - i) * 60, o, h, l: lo, c: p, v: Math.floor(Math.random() * 400) });
       p = o;
+    }
+    return out;
+  }
+
+  /** 個股多日 1 分 K：每個平日 09:01–13:30，從現價往回隨機漫步 */
+  private stockBars(l: Live, start: string, end: string): Bar[] {
+    const days: number[] = [];
+    const nowS = nowSec();
+    for (let d = Date.parse(start + 'T00:00:00Z') / 1000; d <= Date.parse(end + 'T00:00:00Z') / 1000; d += 86400) {
+      const wd = new Date(d * 1000).getUTCDay();
+      if (wd !== 0 && wd !== 6 && d + 9 * 3600 < nowS) days.push(d);
+    }
+    const out: Bar[] = [];
+    let p = l.last;
+    const tick = (x: number) => +x.toFixed(l.ref > 100 ? 0 : 2);
+    for (let di = days.length - 1; di >= 0; di--) {
+      const d0 = days[di];
+      const lastMin = Math.min(270, Math.floor((nowS - (d0 + 9 * 3600)) / 60));
+      const dayBars: Bar[] = [];
+      const vol = p * 0.0012;
+      for (let m = lastMin; m >= 1; m--) {
+        const o = Math.max(0.01, p - (Math.random() - 0.5) * vol * 2);
+        dayBars.unshift({ t: d0 + 9 * 3600 + m * 60, o: tick(o), h: tick(Math.max(o, p) + Math.random() * vol), l: tick(Math.min(o, p) - Math.random() * vol), c: tick(p),
+          v: Math.floor(Math.random() ** 2 * 900 * (m < 15 || m > 255 ? 3 : 1)) + 5 });
+        p = o;
+      }
+      out.unshift(...dayBars);
+      p = p * (1 + (Math.random() - 0.5) * 0.012); // 隔夜跳空
+    }
+    return out;
+  }
+
+  async ticksDay(c: Contract): Promise<Tick[]> {
+    const l = this.get(c);
+    if (!l) return [];
+    const now = tpeNow();
+    const d0 = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000;
+    const endT = Math.min(nowSec(), d0 + 13 * 3600 + 30 * 60);
+    const out: Tick[] = [];
+    let p = l.last;
+    for (let t = endT; t > d0 + 9 * 3600 && out.length < 1500; t -= 2 + Math.floor(Math.random() * 20)) {
+      const big = Math.random() < 0.02;
+      const vol = big ? 20 + Math.floor(Math.random() * 400) : 1 + Math.floor(Math.random() ** 3 * 30);
+      out.unshift({ code: l.c.code, t, price: p, vol, totalVol: NaN, side: Math.random() > 0.48 ? 1 : 2 });
+      p = +(p * (1 + (Math.random() - 0.5) * 0.002)).toFixed(l.ref > 100 ? 0 : 2);
     }
     return out;
   }
@@ -315,11 +374,6 @@ export class DemoBackend implements Backend {
 
   private step() {
     const h = this.h!;
-    // 權值股／庫存股：有訂閱就送 tick
-    for (const [code, price] of this.stockPx) {
-      if (!this.subs.has(`${code}:Tick`) || Math.random() > 0.3) continue;
-      h.tick({ code, t: nowSec(), price, vol: 1 + Math.floor(Math.random() * 20), totalVol: NaN, side: Math.random() > 0.5 ? 1 : 2 });
-    }
     this.spot += (Math.random() - 0.5) * 6 + (this.spotRef + 150 - this.spot) * 0.001;
     this.basis += (Math.random() - 0.5) * 0.6;
     const t = nowSec();
@@ -340,21 +394,29 @@ export class DemoBackend implements Backend {
       const baSub = this.subs.has(`${code}:BidAsk`);
       if (!tickSub && !baSub) continue;
       const isFut = code === this.futCode;
-      const fair = isFut ? Math.round(this.F) : this.optPrice(l.opt!);
-      const trade = isFut || Math.random() < 0.18;
+      const isStk = l.c.security_type === 'STK';
+      let fair: number;
+      if (isStk) {
+        const tk = l.ref > 1000 ? 5 : l.ref > 100 ? 0.5 : 0.05;
+        const base = this.stockPx.get(code) ?? l.last;
+        fair = +(Math.round((base + (Math.random() - 0.5) * tk * 2) / tk) * tk).toFixed(2);
+        this.stockPx.set(code, fair);
+      } else fair = isFut ? Math.round(this.F) : this.optPrice(l.opt!);
+      const trade = isFut || Math.random() < (isStk ? 0.5 : 0.18);
       if (trade && tickSub) {
-        const vol = 1 + Math.floor(Math.random() ** 3 * (isFut ? 40 : 120));
+        const vol = isStk && Math.random() < 0.03 ? 50 + Math.floor(Math.random() * 600)
+          : 1 + Math.floor(Math.random() ** 3 * (isFut ? 40 : isStk ? 25 : 120));
         const side = (fair >= l.last ? 1 : 2) as 1 | 2;
         l.last = fair; l.totalVol += vol;
         l.high = Math.max(l.high, fair); l.low = Math.min(l.low, fair);
         h.tick({ code: isFut ? this.futAlias || code : code, t, price: fair, vol, totalVol: l.totalVol, side, high: l.high, low: l.low, open: l.open });
       }
       if (baSub) {
-        const tk = isFut ? 1 : fair >= 50 ? 1 : fair >= 10 ? 0.5 : 0.1;
+        const tk = isStk ? (l.ref > 1000 ? 5 : l.ref > 100 ? 0.5 : 0.05) : isFut ? 1 : fair >= 50 ? 1 : fair >= 10 ? 0.5 : 0.1;
         const bids: [number, number][] = [], asks: [number, number][] = [];
         for (let i = 0; i < 5; i++) {
-          bids.push([Math.max(0.1, +(fair - tk * (i + 1)).toFixed(1)), 1 + Math.floor(Math.random() * 60)]);
-          asks.push([+(fair + tk * i).toFixed(1), 1 + Math.floor(Math.random() * 60)]);
+          bids.push([Math.max(0.01, +(fair - tk * (i + 1)).toFixed(2)), 1 + Math.floor(Math.random() * 60)]);
+          asks.push([+(fair + tk * i).toFixed(2), 1 + Math.floor(Math.random() * 60)]);
         }
         h.bidask({ code: isFut ? this.futAlias || code : code, bids, asks });
       }

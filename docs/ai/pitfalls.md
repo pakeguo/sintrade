@@ -75,6 +75,12 @@
   回到頁面時就不會重新訂閱 → 損益不再跳動。解法：unuse 時一併 `clear()`。
 - 寫新的共用服務（use/unuse）時照同一模式。
 
+## 7b. 圖表在隱藏區塊建立後切換顯示，K 棒擠成一團
+
+- lightweight-charts `autoSize` 靠 ResizeObserver，切成顯示的當下寬度還是 0；
+  此時 `setVisibleLogicalRange` 會算出極小的 barSpacing。
+- 解法：兩次 `requestAnimationFrame` 後先 `chart.resize()` 再設定範圍（`stocks.ts` 的 `loadK`）。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

@@ -159,6 +159,8 @@ export interface Backend {
   snapshots(cs: Contract[]): Promise<Snap[]>;
   kbars(c: Contract, start: string, end: string): Promise<Bar[]>;
   recentTicks(c: Contract, date: string, count: number): Promise<Tick[]>;
+  /** 某日全部逐筆成交（大單統計用） */
+  ticksDay(c: Contract, date: string): Promise<Tick[]>;
   scanner(type: ScannerType, ascending: boolean, count: number): Promise<ScanRow[]>;
   subscribe(c: Contract, q: QuoteType): Promise<void>;
   unsubscribe(c: Contract, q: QuoteType): Promise<void>;

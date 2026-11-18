@@ -8,7 +8,7 @@
 //
 // 用法：在專案資料夾執行  npm run phone
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -39,6 +39,9 @@ if (!existsSync(INDEX)) {
   console.error('\n✖ 找不到 dist/index.html，請先執行 npm run build（或 npm run deploy）。\n');
   process.exit(1);
 }
+
+const STORE = join(ROOT, 'mywatch-store.json'); // 自選股等設定（電腦手機同步；已 gitignore）
+const isLocal = (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 
 const TOKEN = createHash('sha256').update('mywatch-phone:' + PASSWORD).digest('hex');
 const COOKIE = 'mw_auth';
@@ -158,9 +161,30 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (!authed(req)) {
+  // 從電腦本機開啟免密碼；手機（區網、Tailscale）需要密碼
+  if (!isLocal(ip) && !authed(req)) {
     if (path.startsWith('/api/')) return send(res, 401, '{"message":"unauthorized"}', 'application/json');
     return send(res, 200, loginPage());
+  }
+
+  // 設定同步：GET 讀取、PUT 整份覆寫（JSON，上限 512KB）
+  if (path === '/mw/store') {
+    if (req.method === 'GET') {
+      return send(res, 200, existsSync(STORE) ? readFileSync(STORE) : '{}', 'application/json');
+    }
+    if (req.method === 'PUT') {
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 512 * 1024) req.destroy(); });
+      req.on('end', () => {
+        try {
+          JSON.parse(body);
+          writeFileSync(STORE + '.tmp', body);
+          renameSync(STORE + '.tmp', STORE);
+          send(res, 200, '{"ok":true}', 'application/json');
+        } catch { send(res, 400, '{"message":"bad json"}', 'application/json'); }
+      });
+      return;
+    }
   }
 
   if (path === '/' || path === '/index.html') {
@@ -186,5 +210,6 @@ server.listen(PORT, '0.0.0.0', () => {
     const tag = ip.startsWith('100.') ? '（Tailscale，出門在外用這個）' : '（同一個 Wi-Fi 用這個）';
     console.log(`   http://${ip}:${PORT}   ${tag}  [${name}]`);
   }
+  console.log(`   http://localhost:${PORT}   （這台電腦用這個，免密碼；自選股與手機同步）`);
   console.log('\n   電腦和 shioaji server 要保持開著；按 Ctrl+C 結束。\n');
 });

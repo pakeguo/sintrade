@@ -113,6 +113,15 @@ export class LiveBackend implements Backend {
     }));
   }
 
+  async ticksDay(c: Contract, date: string): Promise<Tick[]> {
+    const r = await req<Columnar>('POST', '/data/ticks', { contract: ref(c), date, query_type: 'AllDay' });
+    const dt = (r.datetime ?? []) as string[];
+    return dt.map((d, i) => ({
+      code: c.code, t: isoToSec(d), price: num(r.close[i]), vol: num(r.volume[i]),
+      totalVol: NaN, side: (Number(r.tick_type[i]) || 0) as 0 | 1 | 2,
+    }));
+  }
+
   async scanner(type: ScannerType, ascending: boolean, count: number): Promise<ScanRow[]> {
     const r = await req<Record<string, unknown>[]>('POST', '/data/scanner', {
       scanner_type: type, ascending, count,
