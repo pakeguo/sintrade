@@ -188,7 +188,7 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .rl-detail .tbl-wrap { max-height: 280px; overflow: auto; }
 /* 個股 */
 .stk { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 10px; padding: 10px 16px 16px; }
-.wl { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+.stk .wl { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
   max-height: calc(100vh - 80px); position: sticky; top: 10px; }
 .wl-search { position: relative; }
 .wl-search input { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; }
@@ -338,6 +338,9 @@ table.tc td.vol { min-width: 64px; width: 22%; }
 .diag-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 50; max-width: 92vw; background: #5a1414; color: #ffd9d9;
   border: 1px solid #b42318; border-radius: 8px; padding: 8px 14px; font-size: 12px; line-height: 1.6; cursor: pointer; box-shadow: 0 8px 24px #000a; }
 .diag-bar[hidden] { display: none; }
+/* 帳務：沒有期權部位時收合 */
+.acct.ac-nofut .ac-frow, .acct.ac-nofut #ac-greeks { display: none; }
+.acct.ac-nofut > .ov-row.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* 設計藍圖 */
 .bp { padding: 14px 16px; }
 .bp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 12px; }
@@ -377,9 +380,10 @@ table.tc td.vol { min-width: 64px; width: 22%; }
 .cm.warn { color: var(--accent); }
 .cs { font-size: 12px; color: var(--muted); }
 .cs b { color: var(--text); }
-.wl { display: flex; align-items: baseline; gap: 6px; font-size: 19px; line-height: 1.25; }
-.wl small { font-size: 11px; color: var(--muted); font-weight: 400; }
-.wl em { font-style: normal; font-size: 11px; color: var(--muted); font-weight: 400; margin-left: auto; }
+/* 期權頁「量能壓力／支撐」（原名 .wl 與個股自選清單撞名，pitfalls #16） */
+.op-wall { display: flex; align-items: baseline; gap: 6px; font-size: 19px; line-height: 1.25; }
+.op-wall small { font-size: 11px; color: var(--muted); font-weight: 400; }
+.op-wall em { font-style: normal; font-size: 11px; color: var(--muted); font-weight: 400; margin-left: auto; }
 .tip {
   display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%;
   border: 1px solid var(--muted); font-size: 10px; cursor: help;

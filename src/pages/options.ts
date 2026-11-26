@@ -192,8 +192,8 @@ function renderCards(m: Metrics) {
   const cv = m.maxCall ? hub.quotes.get(m.maxCall.c!.code)?.vol ?? 0 : 0;
   const pv = m.maxPut ? hub.quotes.get(m.maxPut.p!.code)?.vol ?? 0 : 0;
   card('c-wall', '量能壓力 / 支撐',
-    `<div class="wl"><small>壓</small><span class="up">${m.maxCall ? fmt(m.maxCall.k) : '—'}</span><em>${fmtVol(cv)}</em></div>
-     <div class="wl"><small>撐</small><span class="down">${m.maxPut ? fmt(m.maxPut.k) : '—'}</span><em>${fmtVol(pv)}</em></div>`,
+    `<div class="op-wall"><small>壓</small><span class="up">${m.maxCall ? fmt(m.maxCall.k) : '—'}</span><em>${fmtVol(cv)}</em></div>
+     <div class="op-wall"><small>撐</small><span class="down">${m.maxPut ? fmt(m.maxPut.k) : '—'}</span><em>${fmtVol(pv)}</em></div>`,
     '',
     '', '依今日成交量：Call 最大量履約價常被視為上方壓力、Put 最大量履約價為下方支撐（API 不提供未平倉量，這裡以成交量代替）。');
 }

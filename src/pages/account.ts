@@ -19,7 +19,7 @@ const TEMPLATE = `
     <div class="card ov-card" id="ac-greeks"></div>
     <div class="card ov-card" id="ac-stk"></div>
   </div>
-  <div class="ov-row two">
+  <div class="ov-row two ac-frow">
     <div class="card ov-card" id="ac-fpos"></div>
     <div class="card ov-card"><div class="ct">到期損益圖<span class="tip" title="橫軸＝結算時的指數；實線＝到期損益，虛線＝目前（以現在的 IV 估算）。黃點＝損益兩平">?</span>
       <span class="ct-r lgd"><i class="l-fut"></i>到期　<i class="l-now"></i>目前</span></div><div id="ac-payoff" class="payoff"></div></div>
@@ -300,6 +300,10 @@ function frame() {
   if (dirty && !pointerHeld()) {
     dirty = false;
     const pcs = calcPositions();
+    // 沒有期權部位時收合 Greeks／部位／到期損益圖，證券庫存與已實現損益往上移
+    const sec = document.querySelector('.acct');
+    const none = account.state.ready && pcs.length === 0 && !account.state.errors.futPos;
+    sec?.classList.toggle('ac-nofut', none);
     renderMargin(); renderGreeks(pcs); renderStkSummary(); renderFutPos(pcs); renderPayoff(pcs); renderStkPos();
   }
   timer = setTimeout(() => requestAnimationFrame(frame), 400);

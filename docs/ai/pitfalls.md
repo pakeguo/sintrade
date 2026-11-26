@@ -163,6 +163,7 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 **根因**：個股盤中容器用了通用 class `.live`，而總覽熱力圖的「● 即時」標籤即時時也加 `live` class（連線狀態 `.conn.live` 也是）。
 新增 `.live { height: calc(100vh - 208px) }` 後，這個小標籤被撐成 700px 高。之前 `.live { display:grid }` 就已經套上去了，只是沒有明顯症狀。
 **解法**：改名 `.stk-live`。**規則：頁面專屬元素用「頁面前綴」命名（`stk-`、`ov-`、`pd-`、`ac-`），不要用 live/active/on 這類通用字當主要 class。**
+- 2026-11-27 又一例：期權頁「量能壓力／支撐」用 `.wl`，與個股自選清單 `.wl` 撞名 → 8 張指標卡被撐到 210px。改名 `.op-wall`，自選清單規則限定 `.stk .wl`。
 **防範**：改 CSS 後一定要跑 `tests/ui/layout.cjs` 與 `tests/ui/clicks.cjs`（涵蓋所有頁面），不能只測改的那一頁。
 
 ## 17. 帳務頁整頁點不動：借用別頁的 class，被「鋪滿」規則放大成全螢幕覆蓋層 ⚠️
