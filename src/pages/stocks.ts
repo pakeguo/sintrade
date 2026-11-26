@@ -149,7 +149,7 @@ async function open(c: string) {
   LS.set('stkCode', c);
   if (location.hash !== `#/stocks/${c}`) history.replaceState(null, '', `#/stocks/${c}`);
   const seq = ++loadSeq;
-  ticks = []; info = null; contract = null;
+  ticks = []; info = null; contract = null; refPx = NaN;
   if (refLine && pxLine) { pxLine.removePriceLine(refLine); refLine = null; }
   dirty = true;
   const ct = await contractOf(c);
@@ -196,10 +196,29 @@ function chartOpts() {
   } as const;
 }
 
+let refPx = NaN;                                // 參考價：分時圖價格軸以它為中心上下對稱
+let axisLine: ISeriesApi<'Line'> | null = null;  // 只放空白點，撐出 09:00–13:30 的完整時間軸
+
+/** 價格軸以參考價為中心、上下對稱，最小 ±0.5%（小波動不會被放大成劇烈起伏） */
+const symmetricScale = (orig: () => { priceRange: { minValue: number; maxValue: number } } | null) => {
+  const r = orig();
+  if (!r || !fin(refPx)) return r;
+  const d = Math.max(Math.abs(r.priceRange.maxValue - refPx), Math.abs(r.priceRange.minValue - refPx), refPx * 0.005);
+  return { ...r, priceRange: { minValue: refPx - d * 1.04, maxValue: refPx + d * 1.04 } };
+};
+
 function initIntraday() {
-  ichart = createChart(document.getElementById('ichart')!, chartOpts());
-  pxLine = ichart.addSeries(LineSeries, { color: '#c9d1d9', lineWidth: 2, priceLineVisible: false });
-  vwLine = ichart.addSeries(LineSeries, { color: cssVar('--accent'), lineWidth: 1, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false });
+  ichart = createChart(document.getElementById('ichart')!, {
+    ...chartOpts(),
+    // 不用 fixRightEdge：它會把右邊界綁在「最後一筆實際資料」，後面空白的時段就看不到
+    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 0 },
+  });
+  // 注意：visible:false 的序列不會被算進時間軸，所以用「看得見但完全透明」的線
+  axisLine = ichart.addSeries(LineSeries, {
+    color: 'rgba(0,0,0,0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  pxLine = ichart.addSeries(LineSeries, { color: '#c9d1d9', lineWidth: 2, priceLineVisible: false, autoscaleInfoProvider: symmetricScale });
+  vwLine = ichart.addSeries(LineSeries, { color: cssVar('--accent'), lineWidth: 1, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, autoscaleInfoProvider: symmetricScale });
   ivol = ichart.addSeries(HistogramSeries, { priceScaleId: 'v', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
   ichart.priceScale('v').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 }
@@ -215,7 +234,23 @@ function setIntraday(bars: Bar[]) {
   pxLine.setData(dayBars.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
   vwLine!.setData(dayBars.map((b, i) => ({ time: b.t as UTCTimestamp, value: vw[i] })));
   ivol!.setData(dayBars.map((b) => ({ time: b.t as UTCTimestamp, value: b.v, color: b.c >= b.o ? cssVar('--up-a') : cssVar('--down-a') })));
-  ichart!.timeScale().fitContent();
+  // 以 09:00 開盤、13:30 收盤為錨點：每分鐘一個空白點，時間軸永遠是完整交易時段
+  const d0 = last ? Date.parse(last + 'T00:00:00Z') / 1000 : Date.parse(tpeToday() + 'T00:00:00Z') / 1000;
+  const axis = [];
+  for (let m = 9 * 60; m <= 13 * 60 + 30; m++) axis.push({ time: (d0 + m * 60) as UTCTimestamp });
+  axisLine!.setData(axis);
+  fitSession();
+}
+
+/** 顯示範圍＝ 09:00 到 13:30（axis 的第 0 到最後一點）；等版面量好寬度再設定（pitfalls #7b） */
+function fitSession() {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const el = document.getElementById('ichart');
+    if (!ichart || !el) return;
+    ichart.resize(el.clientWidth, el.clientHeight);
+    // 兩端各留幾分鐘邊距，09:00、13:30 的時間標籤才不會被切掉
+    ichart.timeScale().setVisibleLogicalRange({ from: -6, to: 270 + 6 });
+  }));
 }
 
 function onTick(t: Tick) {
@@ -347,6 +382,7 @@ function renderHeader() {
       ${held.length ? chip('我的庫存', `${held.reduce((s, p) => s + p.quantity, 0)} 張 ${sign(pnl, 0)}`, cls(pnl)) : ''}
     </div>`;
   // 分時圖的參考價虛線
+  if (fin(ref) && ref !== refPx) { refPx = ref; ichart?.priceScale('right').applyOptions({ autoScale: true }); }
   if (pxLine && !refLine && fin(ref)) {
     refLine = pxLine.createPriceLine({ price: ref, color: cssVar('--muted'), lineStyle: LineStyle.Dashed, lineWidth: 1, title: '參考' });
   }
@@ -558,7 +594,7 @@ export const stocksPage: Page = {
     wlSubs = new Set();
     contract = null; code = '';
     ichart?.remove(); kchart?.remove(); rchart?.remove();
-    ichart = kchart = rchart = null; pxLine = vwLine = null; ivol = null; candle = null; kvol = null; rsiS = null;
+    ichart = kchart = rchart = null; pxLine = vwLine = axisLine = null; ivol = null; candle = null; kvol = null; rsiS = null;
     maS = []; bbS = []; refLine = null;
   },
 };

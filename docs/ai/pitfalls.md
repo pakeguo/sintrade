@@ -135,6 +135,13 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 
 **通則**：shioaji 加值串流的某些 metric 可能實盤不推送或頻率很低，不要讓整個元件依賴單一 metric。
 
+## 14. lightweight-charts 固定時間軸（09:00–13:30）的兩個陷阱
+
+- 想用空白點（whitespace）撐出完整交易時段：**`visible: false` 的序列不會被算進時間軸** → 改用「看得見但完全透明」的線。
+- **`fixRightEdge: true` 會把右邊界綁在最後一筆「實際資料」**，後面的空白時段看不到 → 不用 fixRightEdge，
+  改在 rAF 後 `setVisibleLogicalRange({ from: -6, to: 276 })`（第 0 點＝09:00、第 270 點＝13:30，兩端留邊距避免標籤被切）。
+- 實作見 `stocks.ts` 的 `setIntraday()`／`fitSession()`；之後其他分時圖（總覽走勢、技術分析窗口）照同樣做法。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

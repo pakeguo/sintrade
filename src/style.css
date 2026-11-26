@@ -210,7 +210,9 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .addw { margin-left: auto; } .addw.on { color: var(--accent); border-color: var(--accent); }
 .live { display: grid; grid-template-columns: minmax(0, 1fr) 280px 300px; gap: 10px; }
 .live[hidden], .kview[hidden], .seg[hidden], .rchart[hidden] { display: none; }
-.lv-chart { padding: 8px; } .ichart { height: 430px; }
+.lv-chart { padding: 8px; }
+/* 分時圖高度跟著視窗：扣掉上方標題列、個股資訊列與工具列 */
+.ichart { height: clamp(360px, calc(100vh - 300px), 760px); }
 .lv-chart .lgd { margin: 4px 0 0; display: block; }
 .l-px { background: #c9d1d9; } .l-vwap { background: var(--accent); } .dash { color: var(--muted); letter-spacing: -1px; }
 .lv-side { display: flex; flex-direction: column; gap: 10px; }
@@ -222,7 +224,7 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tag.t2 { background: rgba(245,185,74,.25); color: var(--accent); }
 .tag.t3 { background: #d17cff; color: #1a0b22; }
 .lv-ticks { display: flex; flex-direction: column; } .lv-ticks .ct label { font-size: 12px; cursor: pointer; }
-.ticks { overflow-y: auto; max-height: 560px; margin-top: 4px; font-size: 13px; }
+.ticks { overflow-y: auto; max-height: clamp(360px, calc(100vh - 290px), 780px); margin-top: 4px; font-size: 13px; }
 .tk-r { display: grid; grid-template-columns: 64px 1fr 56px 22px 52px; gap: 4px; padding: 2px 4px; border-bottom: 1px solid var(--grid); }
 .tk-r .tm { color: var(--muted); } .tk-r .pr, .tk-r .vl { text-align: right; font-weight: 600; }
 .tk-r.big2 { background: rgba(245,185,74,.08); } .tk-r.big3 { background: rgba(209,124,255,.14); }
