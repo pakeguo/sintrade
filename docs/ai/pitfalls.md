@@ -141,6 +141,8 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 - **`fixRightEdge: true` 會把右邊界綁在最後一筆「實際資料」**，後面的空白時段看不到 → 不用 fixRightEdge，
   改在 rAF 後 `setVisibleLogicalRange({ from: -6, to: 276 })`（第 0 點＝09:00、第 270 點＝13:30，兩端留邊距避免標籤被切）。
 - 實作見 `stocks.ts` 的 `setIntraday()`／`fitSession()`；之後其他分時圖（總覽走勢、技術分析窗口）照同樣做法。
+- 圖表在隱藏狀態（如個股頁 K 線模式）時寬度為 0；切回顯示要重新設定範圍 → 用 ResizeObserver 偵測寬度變化就呼叫 `fitSession()`。
+- 要「以參考價為中心上下對稱」：除了 autoscaleInfoProvider，還要把 `rightPriceScale.scaleMargins` 設成上下相等（預設上 0.2／下 0.1 會讓參考價偏下）。
 - 總覽走勢圖（2026-11-26）已套用：日盤 08:46–13:45（300 點）、全時＝前一交易日 15:01→隔日 05:00 ＋ 當日 08:46–13:45（1,140 點，休市時段不留白）。
   交易日判定 `sessionDay()`：15:00 後算下一個平日、週六凌晨算下週一（`overview.ts`）。
   舊做法「取加權最後交易日的期貨所有 K 棒」會把凌晨夜盤畫進日盤，時間軸出現 00:30–04:30。

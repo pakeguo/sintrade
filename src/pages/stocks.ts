@@ -197,7 +197,8 @@ function chartOpts() {
 }
 
 let refPx = NaN;                                // 參考價：分時圖價格軸以它為中心上下對稱
-let axisLine: ISeriesApi<'Line'> | null = null;  // 只放空白點，撐出 09:00–13:30 的完整時間軸
+let axisLine: ISeriesApi<'Line'> | null = null;
+let ichartRO: ResizeObserver | null = null;  // 只放空白點，撐出 09:00–13:30 的完整時間軸
 
 /** 價格軸以參考價為中心、上下對稱，最小 ±0.5%（小波動不會被放大成劇烈起伏） */
 const symmetricScale = (orig: () => { priceRange: { minValue: number; maxValue: number } } | null) => {
@@ -212,7 +213,16 @@ function initIntraday() {
     ...chartOpts(),
     // 不用 fixRightEdge：它會把右邊界綁在「最後一筆實際資料」，後面空白的時段就看不到
     timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 0 },
+    // 預設上 20%、下 10% 的留白會讓參考價偏下 → 上下留白一致，漲跌兩邊等高
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.06 } },
   });
+  // 圖表大小改變（含從「K 線分析」切回、原本寬度 0）→ 重新鋪滿 09:00–13:30（pitfalls #7b）
+  let lastW = 0;
+  ichartRO = new ResizeObserver(([e]) => {
+    const w = Math.round(e.contentRect.width);
+    if (w > 0 && w !== lastW) { lastW = w; fitSession(); }
+  });
+  ichartRO.observe(document.getElementById('ichart')!);
   // 注意：visible:false 的序列不會被算進時間軸，所以用「看得見但完全透明」的線
   axisLine = ichart.addSeries(LineSeries, {
     color: 'rgba(0,0,0,0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
@@ -535,6 +545,7 @@ function bind(el: HTMLElement) {
     const m = (ev.target as HTMLElement).dataset.m as 'live' | 'k' | undefined;
     if (!m || m === mode) return;
     mode = m; LS.set('stkMode', m); applyMode(); dirty = true;
+    if (m === 'live') fitSession();
     if (m === 'k') loadK();
   });
   el.querySelector('#kunit')!.addEventListener('click', (ev) => {
@@ -593,6 +604,7 @@ export const stocksPage: Page = {
     account.unuse('stocks');
     wlSubs = new Set();
     contract = null; code = '';
+    ichartRO?.disconnect(); ichartRO = null;
     ichart?.remove(); kchart?.remove(); rchart?.remove();
     ichart = kchart = rchart = null; pxLine = vwLine = axisLine = null; ivol = null; candle = null; kvol = null; rsiS = null;
     maS = []; bbS = []; refLine = null;
