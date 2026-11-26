@@ -157,10 +157,10 @@ function renderFutPos(pcs: PosCalc[]) {
 function renderPayoff(pcs: PosCalc[]) {
   const el = document.getElementById('ac-payoff')!;
   const legs = pcs.filter((c) => (c.kind === 'opt' && fin(c.K)) || c.kind === 'fut');
-  if (!legs.length) { el.innerHTML = `<div class="muted heat-empty">${account.state.ready ? '沒有可繪製的期權部位' : '查詢中…'}</div>`; return; }
+  if (!legs.length) { el.innerHTML = `<div class="muted ac-empty">${account.state.ready ? '沒有可繪製的期權部位' : '查詢中…'}</div>`; return; }
   const optF = legs.find((c) => fin(c.F))?.F;
   const center = fin(optF ?? NaN) ? optF! : hub.quotes.get(hub.futKey)?.last ?? NaN;
-  if (!fin(center)) { el.innerHTML = '<div class="muted heat-empty">等待行情…</div>'; return; }
+  if (!fin(center)) { el.innerHTML = '<div class="muted ac-empty">等待行情…</div>'; return; }
   const spread = Math.max(1200, ...legs.filter((c) => fin(c.K)).map((c) => Math.abs(c.K - center) * 1.6));
   const lo = center - spread, hi = center + spread, N = 120;
   const xs = Array.from({ length: N + 1 }, (_, i) => lo + ((hi - lo) * i) / N);

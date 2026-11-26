@@ -134,9 +134,9 @@ table.hv { width: 100%; border-collapse: collapse; margin-top: 4px; }
 .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--down); margin-right: 5px;
   box-shadow: 0 0 0 0 rgba(34,176,125,.7); animation: pulse 1.6s infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(34,176,125,.6); } 70% { box-shadow: 0 0 0 7px rgba(34,176,125,0); } 100% { box-shadow: 0 0 0 0 rgba(34,176,125,0); } }
-.heat-empty[hidden] { display: none; }
+.heat .heat-empty[hidden] { display: none; }
 /* 只顯示文字：pointer-events:none 確保它永遠不會擋住點擊（2026-11-26 實盤時它攔截了整頁點擊，pitfalls #17） */
-.heat-empty { pointer-events: none; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; text-align: center; }
+.heat .heat-empty { pointer-events: none; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; text-align: center; }
 .hc-unused { position: absolute; box-sizing: border-box; border: 1px solid var(--panel); padding: 4px 6px; overflow: hidden;
   display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: #fff; }
 .hc b { font-size: 12px; font-weight: 600; text-shadow: 0 1px 2px #0008; white-space: nowrap; }
@@ -162,7 +162,8 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sbar i { display: block; height: 100%; background: var(--accent); }
 .settle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 6px; }
 .settle div { display: flex; flex-direction: column; } .settle span { color: var(--muted); font-size: 11px; } .settle b { font-size: 13px; }
-.payoff { height: 300px; margin-top: 4px; }
+.payoff { height: 300px; margin-top: 4px; position: relative; }
+.ac-empty { padding: 40px 0; text-align: center; } /* 帳務頁專用（不要借用總覽的 heat-empty，pitfalls #17） */
 .po-zero { stroke: var(--muted); stroke-dasharray: 3 3; }
 .po-now { stroke: #c9d1d9; stroke-dasharray: 2 3; }
 .po-l-exp { fill: none; stroke: var(--accent); stroke-width: 2.5; }

@@ -270,6 +270,8 @@ export class DemoBackend implements Backend {
         future_open_position: fpnl, option_open_position: 12_500, today_balance: 1_250_000, yesterday_balance: 1_230_000 } as T;
     }
     if (path === 'position_unit' && type === 'F') {
+      // &nopos=1：模擬沒有期權部位（使用者實際狀況，pitfalls #17）
+      if (new URLSearchParams(location.search).has('nopos')) return [] as T;
       return [
         { id: 0, code: this.futAlias || this.futCode, direction: 'Buy', quantity: 2, price: 27700, last_price: F, pnl: (F - 27700) * 200 * 2 },
         { id: 2, code: 'TXO202612' + '27500P', direction: 'Buy', quantity: 3, price: 120, last_price: 95, pnl: -25 * 50 * 3 },

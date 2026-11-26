@@ -61,6 +61,17 @@ async function slowClick(p, sel) {
     if (await p.$(`#tabs a.on[data-id="${t}"]`)) ok++;
   }
   res.headerTabs = `${ok}/5`;
+  // 5. 帳務頁（沒有期權部位時到期損益圖顯示提示文字）：頁籤與期間按鈕都要點得到（pitfalls #17）
+  ok = 0;
+  for (const t of ['overview', 'account', 'products', 'account', 'options']) {
+    if (t === 'account' || ok === 0) { await p.goto('http://localhost:5173/?demo=1&nopos=1#/account'); await p.waitForTimeout(3500); }
+    await slowClick(p, `#tabs a[data-id="${t}"]`); await p.waitForTimeout(1200);
+    if (await p.$(`#tabs a.on[data-id="${t}"]`)) ok++;
+  }
+  res.accountNoPosTabs = `${ok}/5`;
+  await p.goto('http://localhost:5173/?demo=1&nopos=1#/account'); await p.waitForTimeout(3500);
+  await slowClick(p, '.rl-ctl button[data-r="week"]'); await p.waitForTimeout(800);
+  res.accountRangeBtn = (await p.$('.rl-ctl button.on[data-r="week"]')) ? 'ok' : 'FAIL';
   console.log(res, errs);
   await b.close();
 })();

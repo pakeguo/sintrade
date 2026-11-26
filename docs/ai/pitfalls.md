@@ -165,12 +165,18 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 **解法**：改名 `.stk-live`。**規則：頁面專屬元素用「頁面前綴」命名（`stk-`、`ov-`、`pd-`、`ac-`），不要用 live/active/on 這類通用字當主要 class。**
 **防範**：改 CSS 後一定要跑 `tests/ui/layout.cjs` 與 `tests/ui/clicks.cjs`（涵蓋所有頁面），不能只測改的那一頁。
 
-## 17. 實盤點擊全被熱力圖的「載入中」提示框攔截（調查中，2026-11-26）
+## 17. 帳務頁整頁點不動：借用別頁的 class，被「鋪滿」規則放大成全螢幕覆蓋層 ⚠️
 
-- 使用者 Console 顯示所有 pointerdown/click 的目標都是 `DIV.muted.heat-empty`，頁籤也點不動。DEMO（1920×912）重現不出來：提示框只蓋熱力圖範圍。
-- 已處理：`.heat-empty`、`.hm-tip` 加 `pointer-events: none`（純顯示元素一律如此，永遠不擋點擊）。
-- 新增 `core/diag.ts` 問題偵測器：程式錯誤、長任務 >300ms、區塊繪製 >150ms、點擊被大面積絕對定位元素攔截 → 畫面底部紅色提示列（點一下關閉）。
-- 待確認：真實資料下提示框為何會蓋住整頁（等偵測列截圖）。
+**現象**（2026-11-26）：使用者沒有期權部位時，帳務頁所有按鈕、頁籤都點不動；Console 顯示點擊目標全是 `DIV.muted.heat-empty`。
+**根因**：帳務頁「到期損益圖」的空狀態文字借用了總覽熱力圖的 class `heat-empty`。修熱力圖時把 `.heat-empty` 設成
+`position:absolute; inset:0`，而 `.payoff` 沒有定位 → 包含區塊變成整個視窗 → 透明文字層蓋滿全畫面。
+DEMO 預設有期權部位，所以測試沒觸發。
+**解法**：帳務頁改用自己的 `ac-empty`；`.heat-empty` 規則限定在 `.heat .heat-empty`；`.payoff` 加 `position:relative`；
+純顯示的提示層加 `pointer-events:none`。DEMO 加 `&nopos=1`（沒有期權部位），`tests/ui/clicks.cjs` 涵蓋此情境。
+**規則**：
+- 不要跨頁借用 class（pitfalls #16 的延伸）；`position:absolute; inset:0` 的規則一律寫成「父層 子層」限定範圍。
+- 測試要包含「空資料」情境（沒有部位、沒有庫存、商品檔尚未載入）。
+- 問題偵測器 `core/diag.ts`：錯誤、長任務、點擊被大面積覆蓋層攔截 → 畫面底部紅色提示列。
 
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
