@@ -325,7 +325,8 @@ export class DemoBackend implements Backend {
         if (seed % 3 === 0) continue;
         const date = d.toISOString().slice(0, 10);
         out.push(type === 'F'
-          ? { id: out.length, code: seed % 2 ? 'TXFL6' : 'TXO202612' + (27600 + seed * 50) + 'C', quantity: 1 + (seed % 3), pnl: (seed - 11) * 1_900, date, direction: 'Buy' }
+          // 期權帳戶的日期用 20261118 格式（實盤即如此，pitfalls #23）
+          ? { id: out.length, code: seed % 2 ? 'TXFL6' : 'TXO202612' + (27600 + seed * 50) + 'C', quantity: 1 + (seed % 3), pnl: (seed - 11) * 1_900, date: date.replace(/-/g, ''), direction: 'Buy' }
           : { id: out.length, code: ['2603', '2884', '2317'][seed % 3], quantity: 1 + (seed % 4), pnl: (seed - 10) * 820, date, direction: 'Buy',
               price: [210, 30.2, 220][seed % 3] });
       }

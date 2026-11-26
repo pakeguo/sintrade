@@ -96,3 +96,16 @@ if (typeof document !== 'undefined') {
   window.addEventListener('blur', release);
 }
 export const pointerHeld = () => pressed;
+
+/**
+ * 永豐回傳的日期格式不一致（帳戶別、API 不同）→ 一律轉成 YYYY-MM-DD（pitfalls #23）
+ * 支援：2026-11-18、2026/11/18、20261118、2026-11-18T09:00:00、2026-11-18 09:00、民國 115/11/18、1151118
+ */
+export function normDate(x: unknown): string {
+  const s = String(x ?? '').trim();
+  let m = s.match(/^(\d{4})[-/.]?(\d{1,2})[-/.]?(\d{1,2})/);
+  if (m && (s[4] === '-' || s[4] === '/' || s[4] === '.' || /^\d{8}/.test(s))) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = s.match(/^(\d{2,3})[-/.]?(\d{2})[-/.]?(\d{2})(?!\d)/);   // 民國年
+  if (m) return `${+m[1] + 1911}-${m[2]}-${m[3]}`;
+  return s.slice(0, 10);
+}

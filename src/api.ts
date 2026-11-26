@@ -7,6 +7,7 @@ import type {
 } from './types';
 
 import { isOrderUrl, OrderBlockedError } from './core/guard';
+import { normDate } from './core/util';
 
 const BASE = '/api/v1';
 
@@ -160,7 +161,7 @@ export class LiveBackend implements Backend {
         code: String(f.code),
         target_code: null,
         name: String(f.name ?? f.code),
-        delivery_date: String(f.delivery_date).slice(0, 10).replace(/\//g, '-'),
+        delivery_date: normDate(f.delivery_date),
         delivery_month: String(f.delivery_month ?? ''),
       }));
   }
@@ -183,7 +184,7 @@ export class LiveBackend implements Backend {
         root: String(o.root ?? root),
         strike: num(o.strike_price),
         right: (String(o.option_right ?? '').toUpperCase().startsWith('P') ? 'P' : 'C') as 'C' | 'P',
-        delivery_date: String(o.delivery_date).slice(0, 10),
+        delivery_date: normDate(o.delivery_date),
         delivery_month: String(o.delivery_month ?? ''),
         reference: num(o.reference),
       }));

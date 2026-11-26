@@ -6,7 +6,7 @@
 //   用 mapFutPositions() 對應到實際合約後訂閱即時成交，損益也即時跳動；對應不到時用永豐回傳值
 import { hub, keyOf } from './hub';
 import { type Expiry, loadTxoExpiries } from './optchain';
-import { fin, LS, tpeToday } from './util';
+import { fin, LS, normDate, tpeToday } from './util';
 import type { Account, Contract, OptContract } from '../types';
 
 /** 每點價值（元）：台指期 200、小台 50、微台 10、臺指選擇權 50 */
@@ -128,7 +128,7 @@ class AccountService {
       if (!a) return;
       const rows = await hub.be.portfolio<Record<string, unknown>[]>('profit_loss', body(a, { begin_date: begin, end_date: end }));
       for (const r of rows ?? []) {
-        out.push({ code: String(r.code ?? ''), date: String(r.date ?? '').slice(0, 10).replace(/\//g, '-'),
+        out.push({ code: String(r.code ?? ''), date: normDate(r.date),
           quantity: Number(r.quantity ?? 0), pnl: Number(r.pnl ?? 0), direction: r.direction as string | undefined, account: kind });
       }
     };

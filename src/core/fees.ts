@@ -11,7 +11,7 @@
 //   賣出＝profit_loss（期間內每筆賣出）；買進＝profit_loss_detail（已賣掉的買進明細）＋ position_detail（還在庫存的買進）
 import { hub } from './hub';
 import { account } from './account';
-import { tpeToday } from './util';
+import { normDate, tpeToday } from './util';
 import type { Account } from '../types';
 
 export const FEE = { rate: 0.001425, tier: 1_000_000, d1: 0.2, d2: 0.22 };
@@ -39,7 +39,7 @@ export function computeRebate(month: string, trades: Trade[]): FeeResult {
 }
 
 const num = (x: unknown) => Number(String(x ?? '').replace(/,/g, '')) || 0;
-const day = (x: unknown) => String(x ?? '').slice(0, 10).replace(/\//g, '-');
+const day = (x: unknown) => normDate(x);
 const feeOf = (amount: number) => Math.floor(amount * FEE.rate);
 const body = (a: Account, extra: Record<string, unknown> = {}) =>
   ({ account_type: a.account_type, broker_id: a.broker_id, account_id: a.account_id, ...extra });
