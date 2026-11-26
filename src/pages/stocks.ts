@@ -518,7 +518,7 @@ function flushLive() {
   if (!kLiveDirty || pointerHeld()) return;
   kLiveDirty = false;
   if (mode === 'k') renderK(false);
-  if (mode === 'ta') taView?.update(taBars);
+  if (mode === 'ta' && taReady) taView?.update(taBars);
 }
 
 function onTick(t: Tick) {
@@ -552,7 +552,8 @@ let kBars: Bar[] = [];
 let kNote = '';
 let taBars: Bar[] = [];
 let vpBars: Bar[] = [];
-const MA = [[5, '#f5b94a'], [10, '#8fb3ff'], [20, '#d17cff'], [60, '#5fd3c6']] as const;
+// 台股慣例：月線 20、季線 60、半年線 120、年線 240
+const MA = [[5, '#f5b94a'], [10, '#8fb3ff'], [20, '#d17cff'], [60, '#5fd3c6'], [120, '#ff8a65'], [240, '#c9d1d9']] as const;
 
 function initK() {
   kchart = createChart(document.getElementById('kchart')!, { ...chartOpts(), timeScale: { borderVisible: false, timeVisible: false } });
@@ -570,6 +571,9 @@ function initK() {
   rsiS = rchart.addSeries(LineSeries, { color: '#d17cff', lineWidth: 1, priceLineVisible: false });
   rsiS.createPriceLine({ price: 70, color: 'rgba(240,82,79,.5)', lineStyle: LineStyle.Dashed, lineWidth: 1, title: '70' });
   rsiS.createPriceLine({ price: 30, color: 'rgba(34,176,125,.5)', lineStyle: LineStyle.Dashed, lineWidth: 1, title: '30' });
+  const kel = document.getElementById('kchart')!;
+  kel.addEventListener('pointerdown', () => { kUserMoved = true; });
+  kel.addEventListener('wheel', () => { kUserMoved = true; }, { passive: true });
   // 主圖與 RSI 同步捲動；分價量表跟著可視範圍重算
   kchart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
     if (r) rchart?.timeScale().setVisibleLogicalRange(r);
@@ -577,19 +581,36 @@ function initK() {
   });
 }
 
-async function loadK() {
-  if (!contract || !kchart) return;
-  const seq = loadSeq;
-  document.getElementById('kinfo')!.textContent = `載入 ${labelOf(kunit)}…（第一次較久）`;
-  const built = await buildBars(contract, kunit);
-  if (seq !== loadSeq || !mounted || !kchart) return;
-  kBars = built.bars;
-  vpBars = built.minute;
-  kchart.applyOptions({ timeScale: { timeVisible: isMinute(kunit) } });
-  kNote = built.note ?? '';
-  renderK(true);
+/** 分批載入時合併：只接受比目前更早的 K 棒（最近的部分保留即時成交的更新） */
+function mergeOlder(cur: Bar[], next: Bar[]): Bar[] {
+  if (!cur.length) return next.map((b) => ({ ...b }));
+  const p = cur[0].t;
+  const older = next.filter((b) => b.t < p).map((b) => ({ ...b }));
+  const same = cur.length > 1 ? next.find((b) => b.t === p) : undefined; // 第一根可能只有部分資料（週K、月K）
+  return [...older, same ? { ...same } : cur[0], ...cur.slice(1)];
 }
 
+let kSeq = 0;
+let kUserMoved = false;   // 使用者拖曳／縮放過 K 線 → 往前補資料時不再自動調整可視範圍
+/** K線：先畫最近的 K 棒，再往前補到 1000 根（core/bars.ts），補資料時不動使用者的縮放位置 */
+async function loadK() {
+  if (!contract || !kchart) return;
+  const seq = loadSeq, my = ++kSeq, iv = kunit;
+  const alive = () => seq === loadSeq && my === kSeq && mounted && mode === 'k' && !!kchart;
+  document.getElementById('kinfo')!.textContent = `載入 ${labelOf(iv)}…`;
+  kchart.applyOptions({ timeScale: { timeVisible: isMinute(iv) } });
+  let got = false;
+  kUserMoved = false;
+  await buildBars(contract, iv, (r) => {
+    if (!alive() || (!r.bars.length && r.loading)) return;
+    const first = !got;
+    kBars = mergeOlder(got ? kBars : [], r.bars);
+    vpBars = r.minute;
+    got = true;
+    kNote = r.loading ? `已載入 ${kBars.length} 根，往前補資料中…` : r.note ?? `共 ${kBars.length} 根`;
+    renderK(first || !kUserMoved);
+  }, alive);
+}
 /** 依 kBars 重畫 K線圖；fit=true 時重設可視範圍（載入時），即時更新時不動使用者的縮放 */
 function renderK(fit: boolean) {
   if (!kchart || !candle) return;
@@ -627,15 +648,32 @@ function renderK(fit: boolean) {
 }
 
 /** 技術分析畫面：1 主 2 副（ui/taview.ts），週期與 K線共用 */
+let taReady = false;
 async function loadTA() {
   if (!contract) return;
   const el = document.getElementById('taview')!;
-  taView ??= new TAView(el);
-  const seq = loadSeq;
-  const built = await buildBars(contract, kunit);
-  if (seq !== loadSeq || !mounted || !taView) return;
-  taBars = built.bars;
-  requestAnimationFrame(() => requestAnimationFrame(() => taView?.setBars(taBars, isMinute(kunit))));
+  if (!taView) {
+    taView = new TAView(el);
+    el.addEventListener('pointerdown', () => { kUserMoved = true; });
+    el.addEventListener('wheel', () => { kUserMoved = true; }, { passive: true });
+  }
+  const seq = loadSeq, my = ++kSeq, iv = kunit;
+  const alive = () => seq === loadSeq && my === kSeq && mounted && mode === 'ta' && !!taView;
+  let got = false;
+  taReady = false;
+  kUserMoved = false;
+  await buildBars(contract, iv, (r) => {
+    if (!alive() || (!r.bars.length && r.loading)) return;
+    const first = !got;
+    taBars = mergeOlder(got ? taBars : [], r.bars);
+    got = true;
+    if (first) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (my !== kSeq || !taView) return;
+        taView?.setBars(taBars, isMinute(iv)); taReady = true;
+      }));
+    } else if (taReady) taView?.extend(taBars, !kUserMoved);
+  }, alive);
 }
 
 /** 分價量表：統計目前可視範圍內的成交量分布，畫在 K 線右側 */

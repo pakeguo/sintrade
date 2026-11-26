@@ -11,7 +11,7 @@ import type { Bar } from '../types';
 
 interface Pick { id: string; params: number[] }
 interface Cfg { main: Pick[]; sub: [Pick, Pick] }
-const DEF: Cfg = { main: [{ id: 'ma', params: [5, 10, 20, 60] }], sub: [{ id: 'macd', params: [12, 26, 9] }, { id: 'kd', params: [9, 3, 3] }] };
+const DEF: Cfg = { main: [{ id: 'ma', params: [5, 10, 20, 60, 120, 240] }], sub: [{ id: 'macd', params: [12, 26, 9] }, { id: 'kd', params: [9, 3, 3] }] };
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 const paramsOf = (p: Pick) => { const d = findInd(p.id); return d ? d.params.map((x, i) => (fin(p.params[i]) ? p.params[i] : x.def)) : []; };
 const short = (id: string) => findInd(id)?.name.split(' ')[0] ?? id;
@@ -57,6 +57,8 @@ export class TAView {
   setBars(bars: Bar[], minute: boolean) { this.bars = bars; this.minute = minute; this.build(); this.fill(true); }
   /** 即時更新：只更新資料 */
   update(bars: Bar[]) { this.bars = bars; this.fill(false); }
+  /** 往前補資料：refit=true 時回到最近 120 根（使用者還沒拖曳縮放過） */
+  extend(bars: Bar[], refit: boolean) { this.bars = bars; this.fill(refit); }
 
   private opts(el: HTMLElement, sub: boolean) {
     return {

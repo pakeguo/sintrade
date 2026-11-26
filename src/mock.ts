@@ -125,7 +125,9 @@ export class DemoBackend implements Backend {
   private norm(code: string) { return code.startsWith('TXF') ? this.futCode : code; }
 
   private get(c: Contract): Live | undefined {
-    const code = this.norm(c.target_code ?? c.code);
+    let code = this.norm(c.target_code ?? c.code);
+    const r1 = code.match(/^(MXF|TMF)R1$/);
+    if (r1) code = r1[1] + this.futCode.slice(3); // 小台／微台連續月 → 近月
     let l = this.live.get(code);
     const fm = code.match(/^(MXF|TMF)([A-L])\d$/);
     if (!l && fm) {
@@ -187,57 +189,52 @@ export class DemoBackend implements Backend {
     return out;
   }
 
-  /** 個股多日 1 分 K：每個平日 09:01–13:30，從現價往回隨機漫步 */
-  /** 期貨多日 1 分 K：平日日盤 08:46–13:45＋夜盤 15:01–隔日 05:00，從現價往回隨機漫步 */
+  /** 確定性的價格路徑（同一時間點每次都一樣，分批往前抓時才接得起來）：回傳相對現在的對數變化 */
+  private wave(code: string, t: number, amp: number) {
+    const s = [...code].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7);
+    const x = t / 86400;
+    const n = Math.sin(t * 12.9898 + s) * 43758.5453;
+    return amp * (0.10 * Math.sin(x / 53 + s) + 0.05 * Math.sin(x / 11.7 + s * 2) + 0.02 * Math.sin(x * 2.3 + s)
+      + 0.006 * Math.sin(t / 1900 + s) + 0.003 * Math.sin(t / 310 + s * 3) + 0.0008 * (n - Math.floor(n) - 0.5));
+  }
+  private pathBars(l: Live, times: number[], amp: number, rd: (x: number) => number, vmax: number): Bar[] {
+    const now = nowSec(), base = this.wave(l.c.code, now, amp);
+    const px = (t: number) => l.last * Math.exp(this.wave(l.c.code, t, amp) - base);
+    return times.map((t) => {
+      const o = px(t - 60), c = px(t), j = Math.abs(o - c) * 0.6 + c * 0.0004 * amp;
+      return { t, o: rd(o), h: rd(Math.max(o, c) + j * ((t * 7) % 10) / 10), l: rd(Math.min(o, c) - j * ((t * 3) % 10) / 10), c: rd(c),
+        v: Math.floor(((Math.sin(t * 1.7) + 1) / 2) ** 2 * vmax) + 5 };
+    });
+  }
+
+  /** 期貨／選擇權多日 1 分 K：平日日盤 08:46–13:45＋夜盤 15:01–隔日 05:00 */
   private futBars(l: Live, start: string, end: string): Bar[] {
     const nowS = nowSec();
     const times: number[] = [];
-    for (let d = Date.parse(start + 'T00:00:00Z') / 1000; d <= Date.parse(end + 'T00:00:00Z') / 1000 + 86400; d += 86400) {
+    for (let d = Date.parse(start + 'T00:00:00Z') / 1000; d <= Date.parse(end + 'T00:00:00Z') / 1000; d += 86400) {
       const wd = new Date(d * 1000).getUTCDay();
       if (wd === 0 || wd === 6) continue;
       for (let m = 8 * 60 + 46; m <= 13 * 60 + 45; m++) times.push(d + m * 60);
-      for (let m = 15 * 60 + 1; m <= 29 * 60; m++) times.push(d + m * 60); // 夜盤延續到隔日 05:00
+      for (let m = 15 * 60 + 1; m <= 24 * 60; m++) times.push(d + m * 60);
+      if (wd !== 1) for (let m = 1; m <= 5 * 60; m++) times.push(d + m * 60); // 前一晚夜盤延續到 05:00
     }
     const ts = times.filter((x) => x <= nowS).sort((a, b) => a - b);
-    const out: Bar[] = [];
-    let p = l.last;
     // 選擇權：價格小、波動大，四捨五入到 0.1 並不低於 0.1
-    const rd = l.opt ? (x: number) => Math.max(0.1, Math.round(x * 10) / 10) : Math.round;
-    for (let i = ts.length - 1; i >= 0; i--) {
-      const vol = l.opt ? Math.max(0.3, p * 0.004) : p * 0.0004;
-      const o = l.opt ? Math.max(0.1, p - (Math.random() - 0.5 + (p - l.ref) / l.ref * 0.02) * vol * 2) : p - (Math.random() - 0.5) * vol * 2;
-      out.push({ t: ts[i], o: rd(o), h: rd(Math.max(o, p) + Math.random() * vol), l: rd(Math.min(o, p) - Math.random() * vol),
-        c: rd(p), v: Math.floor(Math.random() ** 2 * (l.opt ? 300 : 900)) + 5 });
-      p = o;
-    }
-    return out.reverse();
+    return l.opt ? this.pathBars(l, ts, 6, (x) => Math.max(0.1, Math.round(x * 10) / 10), 300)
+      : this.pathBars(l, ts, 1, Math.round, 900);
   }
 
+  /** 個股多日 1 分 K：每個平日 09:01–13:30 */
   private stockBars(l: Live, start: string, end: string): Bar[] {
-    const days: number[] = [];
     const nowS = nowSec();
+    const ts: number[] = [];
     for (let d = Date.parse(start + 'T00:00:00Z') / 1000; d <= Date.parse(end + 'T00:00:00Z') / 1000; d += 86400) {
       const wd = new Date(d * 1000).getUTCDay();
-      if (wd !== 0 && wd !== 6 && d + 9 * 3600 < nowS) days.push(d);
+      if (wd === 0 || wd === 6) continue;
+      for (let m = 1; m <= 270; m++) { const t = d + 9 * 3600 + m * 60; if (t <= nowS) ts.push(t); }
     }
-    const out: Bar[] = [];
-    let p = l.last;
     const tick = (x: number) => +x.toFixed(l.ref > 100 ? 0 : 2);
-    for (let di = days.length - 1; di >= 0; di--) {
-      const d0 = days[di];
-      const lastMin = Math.min(270, Math.floor((nowS - (d0 + 9 * 3600)) / 60));
-      const dayBars: Bar[] = [];
-      const vol = p * 0.0012;
-      for (let m = lastMin; m >= 1; m--) {
-        const o = Math.max(0.01, p - (Math.random() - 0.5) * vol * 2);
-        dayBars.unshift({ t: d0 + 9 * 3600 + m * 60, o: tick(o), h: tick(Math.max(o, p) + Math.random() * vol), l: tick(Math.min(o, p) - Math.random() * vol), c: tick(p),
-          v: Math.floor(Math.random() ** 2 * 900 * (m < 15 || m > 255 ? 3 : 1)) + 5 });
-        p = o;
-      }
-      out.unshift(...dayBars);
-      p = p * (1 + (Math.random() - 0.5) * 0.012); // 隔夜跳空
-    }
-    return out;
+    return this.pathBars(l, ts, 2, tick, 900);
   }
 
   async ticksDay(c: Contract): Promise<Tick[]> {

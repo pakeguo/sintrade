@@ -53,7 +53,8 @@ const trueRange = (b: Bar[]) => b.map((x, i) => (i === 0 ? x.h - x.l : Math.max(
 
 export const INDICATORS: IndicatorDef[] = [
   // ── 主圖 ──
-  { id: 'ma', name: '移動平均 MA', pane: 'main', params: [{ label: 'MA1', def: 5 }, { label: 'MA2', def: 10 }, { label: 'MA3', def: 20 }, { label: 'MA4', def: 60 }],
+  { id: 'ma', name: '移動平均 MA', pane: 'main', // 台股慣例：5 週線、10 雙週、20 月線、60 季線、120 半年線、240 年線；參數設 0 可隱藏該條
+    params: [{ label: 'MA1', def: 5 }, { label: 'MA2', def: 10 }, { label: 'MA3', def: 20 }, { label: '季', def: 60 }, { label: '半年', def: 120 }, { label: '年', def: 240 }],
     calc: (b, p) => p.filter((n) => n > 0).map((n, i) => ({ name: `MA${n}`, color: C[i % C.length], data: sma(cl(b), n) })) },
   { id: 'ema', name: '指數平均 EMA', pane: 'main', params: [{ label: 'EMA1', def: 12 }, { label: 'EMA2', def: 26 }],
     calc: (b, p) => p.filter((n) => n > 0).map((n, i) => ({ name: `EMA${n}`, color: C[(i + 2) % C.length], data: ema(cl(b), n) })) },
