@@ -165,6 +165,13 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 **解法**：改名 `.stk-live`。**規則：頁面專屬元素用「頁面前綴」命名（`stk-`、`ov-`、`pd-`、`ac-`），不要用 live/active/on 這類通用字當主要 class。**
 **防範**：改 CSS 後一定要跑 `tests/ui/layout.cjs` 與 `tests/ui/clicks.cjs`（涵蓋所有頁面），不能只測改的那一頁。
 
+## 17. 實盤點擊全被熱力圖的「載入中」提示框攔截（調查中，2026-11-26）
+
+- 使用者 Console 顯示所有 pointerdown/click 的目標都是 `DIV.muted.heat-empty`，頁籤也點不動。DEMO（1920×912）重現不出來：提示框只蓋熱力圖範圍。
+- 已處理：`.heat-empty`、`.hm-tip` 加 `pointer-events: none`（純顯示元素一律如此，永遠不擋點擊）。
+- 新增 `core/diag.ts` 問題偵測器：程式錯誤、長任務 >300ms、區塊繪製 >150ms、點擊被大面積絕對定位元素攔截 → 畫面底部紅色提示列（點一下關閉）。
+- 待確認：真實資料下提示框為何會蓋住整頁（等偵測列截圖）。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

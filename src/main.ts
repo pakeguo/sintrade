@@ -1,5 +1,6 @@
 // App 外框：頁籤路由、全域報價列（加權／台指期）、連線狀態、時鐘
 import './style.css';
+import { initDiag } from './core/diag';
 import { hub } from './core/hub';
 import { $, cls, fin, fmt, LS, retry, session, sign } from './core/util';
 import { accountPage } from './pages/account';
@@ -82,6 +83,7 @@ async function boot() {
   route();
 }
 
+initDiag();
 boot().catch((e) => {
   console.error(e);
   $('page').innerHTML = `<div class="boot-msg">啟動失敗：${String(e?.message ?? e)}</div>`;

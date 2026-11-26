@@ -9,6 +9,7 @@ import { hub } from '../core/hub';
 import { computeMetrics, type Expiry, loadTxoExpiries, pcrLabel, skewLabel } from '../core/optchain';
 import { cls, cssVar, esc, fin, fmt, session, sign, tpeToday, pointerHeld } from '../core/util';
 import { Heatmap } from '../ui/heatmap';
+import { section } from '../core/diag';
 import type { Bar } from '../types';
 import type { Page } from './page';
 
@@ -292,7 +293,8 @@ function frame() {
   if (!mounted) return;
   if (dirty && !pointerHeld()) {
     dirty = false;
-    renderMarket(); renderFut(); renderOpt(); renderHeavy(); renderHeat(); renderAccount();
+    section('總覽/大盤', renderMarket); section('總覽/台指期', renderFut); section('總覽/期權摘要', renderOpt);
+    section('總覽/權值股', renderHeavy); section('總覽/熱力圖', renderHeat); section('總覽/帳戶', renderAccount);
   }
   timer = setTimeout(() => requestAnimationFrame(frame), 500);
 }

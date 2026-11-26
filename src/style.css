@@ -126,7 +126,7 @@ table.hv { width: 100%; border-collapse: collapse; margin-top: 4px; }
 .heat { position: relative; height: 330px; margin-top: 6px; border-radius: 6px; overflow: hidden; background: #0b0e13; }
 .heat-c { position: absolute; inset: 0; }
 .hm-canvas { display: block; cursor: crosshair; }
-.hm-tip { position: absolute; z-index: 3; pointer-events: none; background: rgba(14,17,22,.94); border: 1px solid var(--line);
+.hm-tip { pointer-events: none; position: absolute; z-index: 3; pointer-events: none; background: rgba(14,17,22,.94); border: 1px solid var(--line);
   border-radius: 8px; padding: 6px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 1px; white-space: nowrap; box-shadow: 0 6px 18px #0008; }
 .hm-tip[hidden] { display: none; } /* display:flex 會蓋掉 hidden（pitfalls #7d） */
 .hm-tip b { font-size: 13px; margin-bottom: 2px; } .hm-tip span { color: var(--muted); }
@@ -135,7 +135,8 @@ table.hv { width: 100%; border-collapse: collapse; margin-top: 4px; }
   box-shadow: 0 0 0 0 rgba(34,176,125,.7); animation: pulse 1.6s infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(34,176,125,.6); } 70% { box-shadow: 0 0 0 7px rgba(34,176,125,0); } 100% { box-shadow: 0 0 0 0 rgba(34,176,125,0); } }
 .heat-empty[hidden] { display: none; }
-.heat-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; text-align: center; }
+/* 只顯示文字：pointer-events:none 確保它永遠不會擋住點擊（2026-11-26 實盤時它攔截了整頁點擊，pitfalls #17） */
+.heat-empty { pointer-events: none; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; text-align: center; }
 .hc-unused { position: absolute; box-sizing: border-box; border: 1px solid var(--panel); padding: 4px 6px; overflow: hidden;
   display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: #fff; }
 .hc b { font-size: 12px; font-weight: 600; text-shadow: 0 1px 2px #0008; white-space: nowrap; }
@@ -331,6 +332,10 @@ table.tc td { padding: 3px 4px; } table.tc td.px { min-width: 54px; font-size: 1
 table.tc td.vol { min-width: 64px; width: 22%; }
 .tc-foot { display: flex; align-items: center; gap: 10px; font-size: 12px; padding-top: 6px; color: var(--muted); }
 .tc-foot button { padding: 3px 10px; font-size: 12px; }
+/* 問題偵測列 */
+.diag-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 50; max-width: 92vw; background: #5a1414; color: #ffd9d9;
+  border: 1px solid #b42318; border-radius: 8px; padding: 8px 14px; font-size: 12px; line-height: 1.6; cursor: pointer; box-shadow: 0 8px 24px #000a; }
+.diag-bar[hidden] { display: none; }
 /* 設計藍圖 */
 .bp { padding: 14px 16px; }
 .bp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 12px; }
