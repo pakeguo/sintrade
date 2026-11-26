@@ -147,6 +147,14 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
   交易日判定 `sessionDay()`：15:00 後算下一個平日、週六凌晨算下週一（`overview.ts`）。
   舊做法「取加權最後交易日的期貨所有 K 棒」會把凌晨夜盤畫進日盤，時間軸出現 00:30–04:30。
 
+## 15. 讓長清單不撐高 grid 列：用絕對定位，不要用 flex:1 + height:0
+
+- 個股盤中三欄要上下切齊、逐筆清單在框內捲動。用 `.ticks { flex:1; height:0 }` 實測無效：
+  grid 計算列高時仍把清單內容算進去，整列被撐到 3000px。
+- 解法：卡片 `position: relative`，清單 `position: absolute; top/bottom/left/right` 鋪在卡內 → 列高只由走勢圖決定。
+  中間欄最後一張卡 `flex: 1` 往下填滿。窄螢幕（≤1400px）清單移到下方時改回一般定位。
+- 驗證：Playwright 量 `.lv-chart`、`.lv-side .card:last-child`、`.lv-ticks` 的 top/bottom 是否相等。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

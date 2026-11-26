@@ -220,7 +220,7 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .seg button.on { background: var(--accent); color: #1a1405; }
 .seg.tg button.on { background: rgba(245,185,74,.25); color: var(--text); }
 .addw { margin-left: auto; } .addw.on { color: var(--accent); border-color: var(--accent); }
-.live { display: grid; grid-template-columns: minmax(0, 1fr) 280px 300px; gap: 10px; }
+.live { display: grid; grid-template-columns: minmax(0, 1fr) 280px 300px; gap: 10px; align-items: stretch; }
 .live[hidden], .kview[hidden], .seg[hidden], .rchart[hidden] { display: none; }
 .lv-chart { padding: 8px; }
 /* 分時圖高度跟著視窗：扣掉上方標題列、個股資訊列與工具列 */
@@ -229,6 +229,8 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .l-px { background: #c9d1d9; } .l-vwap { background: var(--accent); } .dash { color: var(--muted); letter-spacing: -1px; }
 .lv-side { display: flex; flex-direction: column; gap: 10px; }
 .lv-side .card { min-height: 0; }
+/* 三欄上下切齊：中間欄最後一張卡（大單統計）往下填滿，高度跟走勢圖一致 */
+.lv-side .card:last-child { flex: 1; }
 .bigt td, .bigt th { padding: 4px 4px; font-size: 12px; }
 .big-sum { margin-top: 6px; font-size: 13px; color: var(--muted); } .big-sum b { font-size: 15px; }
 .tag { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 4px; font-weight: 700; }
@@ -236,7 +238,13 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tag.t2 { background: rgba(245,185,74,.25); color: var(--accent); }
 .tag.t3 { background: #d17cff; color: #1a0b22; }
 .lv-ticks { display: flex; flex-direction: column; } .lv-ticks .ct label { font-size: 12px; cursor: pointer; }
-.ticks { overflow-y: auto; max-height: clamp(360px, calc(100vh - 290px), 780px); margin-top: 4px; font-size: 13px; }
+.ticks { overflow-y: auto; margin-top: 4px; font-size: 13px; }
+/* 逐筆清單不參與撐高：絕對定位鋪在卡片內 → 整列高度只由走勢圖決定，資料多時在框內捲動
+   （flex:1 + height:0 擋不住內容撐高 grid 列，實測整列被撐到 3000px） */
+@media (min-width: 1401px) {
+  .lv-ticks { position: relative; min-height: 0; }
+  .ticks { position: absolute; left: 12px; right: 12px; top: 38px; bottom: 10px; margin: 0; }
+}
 .tk-r { display: grid; grid-template-columns: 64px 1fr 56px 22px 52px; gap: 4px; padding: 2px 4px; border-bottom: 1px solid var(--grid); }
 .tk-r .tm { color: var(--muted); } .tk-r .pr, .tk-r .vl { text-align: right; font-weight: 600; }
 .tk-r.big2 { background: rgba(245,185,74,.08); } .tk-r.big3 { background: rgba(209,124,255,.14); }
@@ -465,7 +473,7 @@ table.chain { width: 100%; border-collapse: collapse; }
   .ov-top { grid-template-columns: 1fr; }
   .ov-chart { flex: none; height: 240px; }
   .live { grid-template-columns: minmax(0, 1fr) 280px; }
-  .lv-ticks { grid-column: 1 / -1; } .ticks { max-height: 320px; }
+  .lv-ticks { grid-column: 1 / -1; } .ticks { max-height: 320px; height: auto; }
 }
 @media (max-width: 1100px) {
   .ov-six { grid-template-columns: repeat(2, minmax(0, 1fr)); }
