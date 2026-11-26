@@ -90,7 +90,11 @@ export class Heatmap {
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(host);
     this.canvas.addEventListener('mousemove', (e) => this.onMove(e));
-    this.canvas.addEventListener('mouseleave', () => { this.hover = null; this.tip.hidden = true; });
+    // 滑鼠離開畫布或整個熱力圖區塊都要收起提示框
+    const hide = this.hideTip;
+    this.canvas.addEventListener('mouseleave', hide);
+    this.host.addEventListener('mouseleave', hide);
+    window.addEventListener('blur', hide);
     document.addEventListener('visibilitychange', this.onVis);
     this.resize();
     this.loop(performance.now());
@@ -109,6 +113,8 @@ export class Heatmap {
     g.fillRect(0, 0, 32, 32);
     return s;
   }
+
+  private hideTip = () => { this.hover = null; this.tip.hidden = true; };
 
   private onVis = () => {
     if (document.hidden) cancelAnimationFrame(this.raf);
@@ -316,6 +322,7 @@ export class Heatmap {
     cancelAnimationFrame(this.raf);
     this.ro.disconnect();
     document.removeEventListener('visibilitychange', this.onVis);
+    window.removeEventListener('blur', this.hideTip);
     this.canvas.remove();
     this.tip.remove();
     this.host.classList.remove('hm-host');

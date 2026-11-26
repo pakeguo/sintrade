@@ -116,6 +116,7 @@ table.hv { width: 100%; border-collapse: collapse; margin-top: 4px; }
 .hm-canvas { display: block; cursor: crosshair; }
 .hm-tip { position: absolute; z-index: 3; pointer-events: none; background: rgba(14,17,22,.94); border: 1px solid var(--line);
   border-radius: 8px; padding: 6px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 1px; white-space: nowrap; box-shadow: 0 6px 18px #0008; }
+.hm-tip[hidden] { display: none; } /* display:flex 會蓋掉 hidden（pitfalls #7d） */
 .hm-tip b { font-size: 13px; margin-bottom: 2px; } .hm-tip span { color: var(--muted); }
 .hm-tag { font-size: 12px; } .hm-tag.live { color: var(--down); }
 .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--down); margin-right: 5px;

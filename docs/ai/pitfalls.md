@@ -91,6 +91,8 @@
 
 - `.heat-empty { display: flex }` 讓 `hidden` 失效，「載入中」一直壓在熱力圖上。
 - 有設定 display 的元素若要用 `hidden`，要補 `.xxx[hidden] { display: none; }`。
+- 2026-11-26 又犯一次：熱力圖提示框 `.hm-tip { display: flex }` → 滑鼠移出後提示框不消失、擋住熱力圖。
+  **新增任何有 display 的元素並用 hidden 控制時，順手補 `[hidden]` 規則。**
 - 同次也踩到：共用 class 設 `position: relative` 把原本 `position: absolute` 的容器蓋掉，畫布高度只剩一半。
 
 ## 7e. 全域 CSS 規則誤傷其他頁的同類元件
