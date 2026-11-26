@@ -41,57 +41,6 @@ if (!existsSync(INDEX)) {
 }
 
 const STORE = join(ROOT, 'mywatch-store.json');
-const EXR = join(ROOT, 'mywatch-exright.json'); // 除權息快取（每 12 小時更新）
-
-// ── 除權息：證交所 TWT49U、櫃買 exDailyQ，近 4 年，依欄位名稱解析 ──
-let exMem = null, exPending = null;
-const rocDate = (s) => { // 114/06/02、114年06月02日、20250602 → 2025-06-02
-  const m = String(s).replace(/\s/g, '').match(/^(\d{2,4})\D?(\d{1,2})\D?(\d{1,2})/);
-  if (!m) return '';
-  let y = Number(m[1]); if (y < 1911) y += 1911;
-  return `${y}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
-};
-const numv = (s) => Number(String(s).replace(/,/g, ''));
-function pickRows(fields, data) {
-  const fi = (re) => fields.findIndex((f) => re.test(f));
-  const iD = fi(/日期/), iC = fi(/代號/), iB = fi(/前收盤/), iR = fi(/^除權息參考價$|參考價/);
-  if ([iD, iC, iB, iR].some((i) => i < 0)) return [];
-  return data.map((r) => ({ code: String(r[iC]).trim(), date: rocDate(r[iD]), before: numv(r[iB]), ref: numv(r[iR]) }))
-    .filter((x) => x.code && x.date && x.before > 0 && x.ref > 0);
-}
-async function getJson(url) {
-  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' } });
-  if (!r.ok) throw new Error(`${new URL(url).host} HTTP ${r.status}`);
-  const txt = await r.text();
-  try { return JSON.parse(txt); } catch { throw new Error(`${new URL(url).host} 回傳的不是資料（可能被擋）`); }
-}
-async function exRightsAll() {
-  if (exMem && Date.now() - exMem.at < 12 * 3600_000) return exMem;
-  if (!exMem && existsSync(EXR)) { try { exMem = JSON.parse(readFileSync(EXR, 'utf8')); if (Date.now() - exMem.at < 12 * 3600_000) return exMem; } catch { /* 重抓 */ } }
-  if (exPending) return exPending;
-  exPending = (async () => {
-    const rows = {}; const errs = [];
-    const add = (list) => { for (const x of list) (rows[x.code] ||= []).push({ date: x.date, before: x.before, ref: x.ref }); };
-    const y0 = new Date().getFullYear();
-    for (let y = y0 - 3; y <= y0; y++) {
-      try {
-        const d = await getJson(`https://www.twse.com.tw/rwd/zh/exchangeReport/TWT49U?startDate=${y}0101&endDate=${y}1231&response=json`);
-        add(pickRows(d.fields || [], d.data || []));
-      } catch (e) { errs.push(`證交所 ${y}：${e.message}`); }
-      try {
-        const d = await getJson(`https://www.tpex.org.tw/www/zh-tw/bulletin/exDailyQ?startDate=${y}/01/01&endDate=${y}/12/31&response=json`);
-        const tb = (d.tables || [])[0] || {};
-        add(pickRows(tb.fields || [], tb.data || []));
-      } catch (e) { errs.push(`櫃買 ${y}：${e.message}`); }
-      await new Promise((r) => setTimeout(r, 400)); // 對公開網站客氣一點
-    }
-    exMem = { at: Date.now(), rows, error: errs.length ? errs.join('；') : undefined };
-    try { writeFileSync(EXR, JSON.stringify(exMem)); } catch { /* ignore */ }
-    console.log(`[除權息] 已更新 ${Object.keys(rows).length} 檔${errs.length ? '，部分失敗：' + errs.join('；') : ''}`);
-    return exMem;
-  })().finally(() => { exPending = null; });
-  return exPending;
-} // 自選股等設定（電腦手機同步；已 gitignore）
 const isLocal = (ip) => ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 
 const TOKEN = createHash('sha256').update('mywatch-phone:' + PASSWORD).digest('hex');
@@ -236,15 +185,6 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
-  }
-
-  // 除權息資料（還原日K用）：由這台電腦代抓證交所／櫃買公開資料（證交所擋雲端機房 IP，家用網路可用）
-  if (path === '/mw/exright' && req.method === 'GET') {
-    const code = new URLSearchParams((req.url || '').split('?')[1] || '').get('code') || '';
-    if (!/^[0-9A-Z]{4,6}$/.test(code)) return send(res, 400, '{"message":"bad code"}', 'application/json');
-    exRightsAll().then((db) => send(res, 200, JSON.stringify({ list: db.rows[code] || [], error: db.error }), 'application/json'))
-      .catch((e) => send(res, 200, JSON.stringify({ list: [], error: String(e?.message || e) }), 'application/json'));
-    return;
   }
 
   if (path === '/' || path === '/index.html') {

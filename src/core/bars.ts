@@ -1,14 +1,14 @@
-// K 棒週期：1/3/5/15/30/自訂分鐘、日、週、月、還原日（K線與技術分析共用）
+// K 棒週期：1/3/5/15/30/自訂分鐘、日、週、月（K線與技術分析共用）
 // shioaji kbars 只有 1 分 K（以結束時間標記）→ 自行彙整
 import { hub } from './hub';
 import { regroup, toDaily } from './indicators';
 import { tpeToday } from './util';
 import type { Bar, Contract } from '../types';
 
-export type Interval = string; // 'm1' 'm3' 'm5' 'm15' 'm30' 'm<N>' 'day' 'week' 'month' 'adj'
+export type Interval = string; // 'm1' 'm3' 'm5' 'm15' 'm30' 'm<N>' 'day' 'week' 'month'
 export const INTERVALS: [Interval, string][] = [
   ['m1', '1分'], ['m3', '3分'], ['m5', '5分'], ['m15', '15分'], ['m30', '30分'],
-  ['day', '日K'], ['week', '週K'], ['month', '月K'], ['adj', '還原日K'],
+  ['day', '日K'], ['week', '週K'], ['month', '月K'],
 ];
 export const isMinute = (iv: Interval) => /^m\d+$/.test(iv);
 export const minutesOf = (iv: Interval) => Number(iv.slice(1));
@@ -16,7 +16,7 @@ export const labelOf = (iv: Interval) => (isMinute(iv) ? `${minutesOf(iv)}分` :
 
 /** 抓幾天的 1 分 K：週期越長抓越多天，分 K 約維持 250–600 根 */
 function daysFor(iv: Interval) {
-  if (iv === 'day' || iv === 'adj') return 200;
+  if (iv === 'day') return 200;
   if (iv === 'week' || iv === 'month') return 400;
   const n = minutesOf(iv);
   return Math.min(200, Math.max(3, Math.ceil(n * 2.2)));
@@ -47,42 +47,11 @@ export function aggregateMinutes(bars: Bar[], n: number): Bar[] {
   return out;
 }
 
-/** 除權息事件（由轉接站抓證交所／櫃買公開資料）；不支援時回空陣列並附原因 */
-export interface ExRight { date: string; before: number; ref: number }
-export async function exRights(code: string): Promise<{ list: ExRight[]; error?: string }> {
-  try {
-    const r = await fetch(`/mw/exright?code=${encodeURIComponent(code)}`, { cache: 'no-store' });
-    if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) {
-      return { list: [], error: '還原日K需要從 http://localhost:5180（npm.cmd run phone）開啟，才能取得證交所／櫃買除權息資料' };
-    }
-    const d = await r.json() as { list?: ExRight[]; error?: string };
-    return { list: d.list ?? [], error: d.error };
-  } catch { return { list: [], error: '無法取得除權息資料' }; }
-}
-
-/** 還原（向前調整）：除權息日之前的價格 × (參考價 ÷ 除權息前收盤)，多次事件累乘 */
-export function adjust(days: Bar[], ev: ExRight[]): Bar[] {
-  const evs = ev.map((e) => ({ t: Date.parse(e.date + 'T00:00:00Z') / 1000, f: e.ref / e.before }))
-    .filter((e) => e.f > 0 && e.f < 1.5).sort((a, b) => b.t - a.t);
-  let f = 1, k = 0;
-  const out: Bar[] = [];
-  for (let i = days.length - 1; i >= 0; i--) {
-    const b = days[i];
-    while (k < evs.length && evs[k].t > b.t) { f *= evs[k].f; k++; }
-    out.push(f === 1 ? b : { ...b, o: b.o * f, h: b.h * f, l: b.l * f, c: b.c * f });
-  }
-  return out.reverse();
-}
-
 export async function buildBars(c: Contract, iv: Interval): Promise<{ bars: Bar[]; minute: Bar[]; note?: string }> {
   const minute = await minuteBars(c, daysFor(iv));
   if (isMinute(iv)) return { bars: aggregateMinutes(minute, minutesOf(iv)), minute };
   const days = toDaily(minute);
   if (iv === 'week' || iv === 'month') return { bars: regroup(days, iv), minute };
-  if (iv === 'adj') {
-    const { list, error } = await exRights(c.code);
-    return { bars: adjust(days, list), minute, note: error ?? (list.length ? `已還原 ${list.length} 次除權息` : '期間內沒有除權息') };
-  }
   return { bars: days, minute };
 }
 
@@ -101,7 +70,7 @@ export function applyTick(bars: Bar[], iv: Interval, t: number, price: number, v
     key = day - ((new Date(day * 1000).getUTCDay() + 6) % 7) * 86400;
   } else if (iv === 'month') {
     const d = new Date(day * 1000); key = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
-  } else key = day;                                            // 日K、還原日K（最新一天還原係數為 1）
+  } else key = day;                                            // 日K
   const last = bars[bars.length - 1];
   if (last && last.t === key) {
     last.h = Math.max(last.h, price); last.l = Math.min(last.l, price); last.c = price; last.v += vol;

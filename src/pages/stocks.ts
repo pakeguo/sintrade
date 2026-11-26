@@ -33,6 +33,7 @@ const TEMPLATE = `
     <div id="sh" class="sh"></div>
     <div class="sm-bar">
       <div class="seg" id="mode"><button data-m="live">盤中</button><button data-m="k">K線</button><button data-m="ta">技術分析</button></div>
+      <button id="ta-gear" class="ta-gear" title="技術指標設定" hidden>⚙</button>
       <div class="seg" id="kunit"></div>
       <div class="seg tg" id="ktog"><button data-t="ma">均線</button><button data-t="bb">布林</button><button data-t="rsi">RSI</button><button data-t="vp">分價量</button></div>
       <button id="add-watch" class="addw">＋ 加入自選</button>
@@ -68,6 +69,7 @@ let info: Info | null = null;
 type Mode = 'live' | 'k' | 'ta';
 let mode: Mode = (LS.get('stkMode') as Mode) ?? 'live';
 let kunit: Interval = LS.get('stkUnit') ?? 'day';
+if (kunit === 'adj') kunit = 'day'; // 還原日K已移除（2026-11-27）
 let taView: TAView | null = null;
 const tog = LS.getJSON<Record<string, boolean>>('stkTog', { ma: true, bb: false, rsi: true, vp: true });
 let groupId = LS.get('stkGroup') ?? '';
@@ -636,6 +638,7 @@ function applyMode() {
   document.getElementById('live')!.hidden = mode !== 'live';
   document.getElementById('kview')!.hidden = mode !== 'k';
   document.getElementById('taview')!.hidden = mode !== 'ta';
+  document.getElementById('ta-gear')!.hidden = mode !== 'ta';
   document.getElementById('kunit')!.hidden = mode === 'live';
   document.getElementById('ktog')!.hidden = mode !== 'k';
 }
@@ -729,6 +732,7 @@ function bind(el: HTMLElement) {
     const u = (ev.target as HTMLElement).closest<HTMLElement>('[data-u]')?.dataset.u;
     if (u) setInterval2(u);
   });
+  el.querySelector('#ta-gear')!.addEventListener('click', () => taView?.openModal());
   el.querySelector('#kunit')!.addEventListener('keydown', (ev) => {
     const e = ev as KeyboardEvent, inp = e.target as HTMLInputElement;
     if (inp.id !== 'kmin' || e.key !== 'Enter') return;

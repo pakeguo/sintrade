@@ -33,14 +33,12 @@ export class TAView {
 
   constructor(private host: HTMLElement) {
     host.innerHTML = `
-      <div class="ta-bar"><span id="ta-sum" class="ta-sum"></span>
-        <button id="ta-open" class="pk-btn" title="選擇與編輯技術指標">⚙ 指標</button></div>
+      <div class="ta-bar"><span id="ta-sum" class="ta-sum"></span></div>
       <div class="ta-panes">
         <div class="ta-pane main"><div class="ta-lgd" id="ta-l0"></div><div class="ta-c" id="ta-c0"></div></div>
         <div class="ta-pane"><div class="ta-lgd" id="ta-l1"></div><div class="ta-c" id="ta-c1"></div></div>
         <div class="ta-pane"><div class="ta-lgd" id="ta-l2"></div><div class="ta-c" id="ta-c2"></div></div>
       </div>`;
-    host.querySelector('#ta-open')!.addEventListener('click', () => this.openModal());
     this.ro = new ResizeObserver(() => this.panes.forEach((p, i) => {
       const el = host.querySelector<HTMLElement>(`#ta-c${i}`);
       if (el && el.clientWidth) p.chart.resize(el.clientWidth, el.clientHeight);
@@ -156,7 +154,8 @@ export class TAView {
   }
 
   // ───────── 指標設定視窗 ─────────
-  private openModal() {
+  /** 由個股頁「技術分析」旁的 ⚙ 按鈕開啟 */
+  openModal() {
     this.modal?.remove();
     const m = document.createElement('div');
     m.className = 'pk-modal-bg';

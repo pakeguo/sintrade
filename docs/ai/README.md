@@ -32,7 +32,7 @@ src/
     util.ts          格式化、台北時間、交易時段 session()、到期判斷 isLive()、LS 儲存、retry()
     optchain.ts      臺指選擇權共用：到期日清單、T 字列、合成期貨、computeMetrics()（期權頁與總覽共用）
     components.ts    權值股前 20（權重快取於 localStorage）、產業類股（index_components 串流），use/unuse 引用計數
-    bars.ts          K 棒週期：1/3/5/15/30/自訂分（以 09:00 起每 N 分、結束時間標記）、日／週／月、還原日（exRights＋adjust 向前調整）
+    bars.ts          K 棒週期：1/3/5/15/30/自訂分（以 09:00 起每 N 分、結束時間標記）、日／週／月；applyTick() 即時更新最後一根
     ta.ts            技術指標庫（主圖 7：MA/EMA/BOLL/ENV/SAR/一目/均價；副圖 18：VOL/MACD/KD/RSI/DMI/OBV/CCI/WR/BIAS/PSY/ATR/MTM/ROC/TRIX/DMA/MFI/ARBR/VR/CMO）
     catalog.ts       股票目錄：代碼→名稱／產業／交易所。stockList()＋逐檔 contractInfo 背景建立，localStorage `mw.catalog` 快取 7 天；search()、industries()、byIndustry()
     nav.ts           openTA()：點商品要去哪（之後換成技術分析窗口）
@@ -59,7 +59,7 @@ src/
   bs.ts              Black-76
   types.ts           型別與 Backend 介面
   style.css          深色主題、紅漲綠跌、頁籤、手機版面
-phone-server.mjs     轉接站：/mw/exright?code= 代抓證交所 TWT49U＋櫃買 exDailyQ 近 4 年除權息（快取 mywatch-exright.json 12 小時）；（白名單：行情＋帳務查詢；封鎖 /order/*）；/mw/store 設定同步；本機 127.0.0.1 免密碼
+phone-server.mjs     轉接站：（白名單：行情＋帳務查詢；封鎖 /order/*）；/mw/store 設定同步；本機 127.0.0.1 免密碼
                      → 建議電腦也用 http://localhost:5180 開啟，自選清單才會與手機同步
 ```
 
