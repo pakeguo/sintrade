@@ -105,10 +105,13 @@ function nameOf(c: string) {
 // ───────── 自選清單 ─────────
 function groups() { return store.data.groups; }
 function curGroup() { return groups().find((g) => g.id === groupId) ?? groups()[0]; }
+/** 內建群組「期權」：選單選到它才顯示台指期／微台近月與最近週選／月選（不能改名、刪除、加入個股） */
+const OPT_G = '__opt';
+const isOptG = () => groupId === OPT_G;
 let wlSubs = new Set<string>();
 
 async function syncWatchSubs() {
-  const want = new Set([...account.state.stkPos.map((p) => p.code), ...(curGroup()?.codes ?? [])]);
+  const want = new Set(isOptG() ? [] : [...account.state.stkPos.map((p) => p.code), ...(curGroup()?.codes ?? [])]);
   for (const c of wlSubs) if (!want.has(c)) hub.release(OWNER_WL, contracts.get(c) ?? { security_type: 'STK', exchange: 'TSE', code: c }, ['Tick']);
   const added = [...want].filter((c) => !wlSubs.has(c));
   wlSubs = want;
@@ -120,8 +123,10 @@ async function syncWatchSubs() {
 
 function renderGroups() {
   const sel = document.getElementById('wl-group') as HTMLSelectElement;
-  sel.innerHTML = groups().map((g) => `<option value="${g.id}">${esc(g.name)}（${g.codes.length}）</option>`).join('');
-  sel.value = curGroup()?.id ?? '';
+  sel.innerHTML = `<option value="${OPT_G}">期權（預設）</option>` +
+    groups().map((g) => `<option value="${g.id}">${esc(g.name)}（${g.codes.length}）</option>`).join('');
+  sel.value = isOptG() ? OPT_G : curGroup()?.id ?? '';
+  for (const id of ['wl-ren-g', 'wl-del-g']) (document.getElementById(id) as HTMLButtonElement).disabled = isOptG();
   document.getElementById('wl-sync')!.innerHTML = store.synced
     ? '✓ 自選清單電腦手機同步中' : '自選清單只存在這個瀏覽器<span class="tip" title="改用 http://localhost:5180（npm.cmd run phone）開啟即可與手機同步">?</span>';
 }
@@ -152,12 +157,18 @@ async function loadDerivDefaults() {
   ]);
   if (!mounted) return;
   const near = tmf.filter((f) => isLive(f.delivery_date)).sort((a, b) => a.delivery_date.localeCompare(b.delivery_date))[0];
-  if (tmfNear && tmfNear.code !== near?.code) hub.release(OWNER_WL, tmfNear, ['Tick']);
-  if (near) { tmfNear = near; known.set(near.code, near); hub.acquire(OWNER_WL, near, ['Tick']); hub.loadSnapshots([near]); }
+  if (tmfNear && tmfNear.code !== near?.code) hub.release(OWNER_EXP, tmfNear, ['Tick']);
+  if (near) { tmfNear = near; known.set(near.code, near); }
   const wk = exps.find((e) => e.root !== 'TXO'), mo = exps.find((e) => e.root === 'TXO');
   optExp = [wk, mo].filter((e): e is Expiry => !!e);
   for (const e of optExp) for (const o of e.list) known.set(o.code, o);
-  for (const e of optExp) if (expOpen.has(e.kind === '月選' ? 'mo' : 'wk')) centerStrikes(e);
+  syncOptSubs();
+}
+/** 期權群組的訂閱：選到「期權」才訂閱微台近月與展開中的履約價，切走就全部退訂 */
+function syncOptSubs() {
+  if (!isOptG()) { hub.releaseAll(OWNER_EXP); expCenter.clear(); dirty = true; return; }
+  if (tmfNear) { hub.acquire(OWNER_EXP, tmfNear, ['Tick']); hub.loadSnapshots([tmfNear]); }
+  for (const e of optExp) if (expOpen.has(expId(e))) centerStrikes(e);
   dirty = true;
 }
 const expId = (e: Expiry) => (e.root === 'TXO' ? 'mo' : 'wk');
@@ -219,14 +230,18 @@ function derivSection() {
     rows.push(`<div class="stk-strikes"><div class="stk-sh"><span>買權</span><span>履約價</span><span>賣權</span></div>${shownRows(e).map((r) =>
       `<div class="stk-sr${fin(F) && Math.abs(r.k - F) < stepOf(e) / 2 ? ' atm' : ''}">${cell(r.c)}<b>${r.k}</b>${cell(r.p)}</div>`).join('')}</div>`);
   }
-  return rows.length ? `<div class="wl-h">期權<small>近月・最近結算</small></div>${rows.join('')}` : '';
+  if (!rows.length) return '<div class="muted wl-empty">期權商品載入中…</div>';
+  const nFut = (hub.fut ? 1 : 0) + (tmfNear ? 1 : 0);
+  return `<div class="wl-h">期貨近月</div>${rows.slice(0, nFut).join('')}` +
+    `<div class="wl-h">選擇權近期結算<small>點開選履約價</small></div>${rows.slice(nFut).join('')}`;
 }
 
 function renderWatch() {
   const held = [...new Set(account.state.stkPos.map((p) => p.code))];
   const g = curGroup();
   const list = (g?.codes ?? []).filter((c) => !held.includes(c));
-  document.getElementById('wl-list')!.innerHTML = derivSection() +
+  if (isOptG()) { document.getElementById('wl-list')!.innerHTML = derivSection(); return; }
+  document.getElementById('wl-list')!.innerHTML =
     (held.length ? `<div class="wl-h">庫存</div>${held.map((c) => wlRow(c, true, false)).join('')}` : '') +
     `<div class="wl-h">${esc(g?.name ?? '自選')}<small>拖曳可排序</small></div>` +
     (list.length ? list.map((c) => wlRow(c, false, true)).join('') : '<div class="muted wl-empty">還沒有股票，用上方搜尋或「＋ 加入自選」</div>');
@@ -475,7 +490,6 @@ function applyKind() {
   document.getElementById('irange')!.hidden = !deriv;
   document.getElementById('ilg-ov')!.textContent = ovFut ? '台指期（左軸）' : '加權（左軸）';
   ixOverlay?.applyOptions({ title: ovFut ? '台指' : '加權' });
-  document.getElementById('add-watch')!.hidden = deriv;
   const [a, b, c] = lotTiers();
   document.getElementById('big-tip')!.title = deriv
     ? `依單筆成交口數推估：散戶 <${a}口、中實戶 ≥${a}口、大戶 ≥${b}口、法人級 ≥${c}口。逐筆成交是匿名的，無法真正分辨身分；淨買＝外盤（主動買）−內盤（主動賣），單位：口`
@@ -672,6 +686,7 @@ function renderHeader() {
   }
   const inGroup = curGroup()?.codes.includes(code);
   const btn = document.getElementById('add-watch')!;
+  btn.hidden = deriv || isOptG();
   btn.textContent = inGroup ? `✓ 已在「${curGroup()!.name}」` : `＋ 加入「${curGroup()?.name ?? '自選'}」`;
   btn.classList.toggle('on', !!inGroup);
 }
@@ -895,7 +910,8 @@ function bind(el: HTMLElement) {
   });
 
   el.querySelector('#wl-group')!.addEventListener('change', (ev) => {
-    groupId = (ev.target as HTMLSelectElement).value; LS.set('stkGroup', groupId); syncWatchSubs(); dirty = true;
+    groupId = (ev.target as HTMLSelectElement).value; LS.set('stkGroup', groupId);
+    renderGroups(); syncWatchSubs(); syncOptSubs(); dirty = true;
   });
   el.querySelector('#wl-add-g')!.addEventListener('click', () => {
     const name = prompt('新群組名稱', '')?.trim();
@@ -905,11 +921,13 @@ function bind(el: HTMLElement) {
     groupId = id; LS.set('stkGroup', id);
   });
   el.querySelector('#wl-ren-g')!.addEventListener('click', () => {
+    if (isOptG()) return;
     const g = curGroup(); if (!g) return;
     const name = prompt('群組新名稱', g.name)?.trim();
     if (name) store.update(() => { g.name = name; });
   });
   el.querySelector('#wl-del-g')!.addEventListener('click', () => {
+    if (isOptG()) return;
     const g = curGroup(); if (!g || groups().length <= 1) { alert('至少要保留一個群組'); return; }
     if (!confirm(`刪除群組「${g.name}」（${g.codes.length} 檔）？`)) return;
     store.update((d) => { d.groups = d.groups.filter((x) => x.id !== g.id); });
@@ -917,7 +935,7 @@ function bind(el: HTMLElement) {
   });
   el.querySelector('#add-watch')!.addEventListener('click', () => {
     store.update(() => {
-      const g = curGroup(); if (!g || !code) return;
+      const g = curGroup(); if (!g || !code || isOptG()) return;
       g.codes = g.codes.includes(code) ? g.codes.filter((c) => c !== code) : [...g.codes, code];
     });
   });
@@ -988,7 +1006,7 @@ export const stocksPage: Page = {
     cleanups.push(hub.on('fut', () => { loadDerivDefaults(); dirty = true; }));
     loadDerivDefaults();
     cleanups.push(account.on(() => { dirty = true; syncWatchSubs(); }));
-    cleanups.push(store.on(() => { renderGroups(); syncWatchSubs(); dirty = true; }));
+    cleanups.push(store.on(() => { renderGroups(); syncWatchSubs(); syncOptSubs(); dirty = true; }));
     const onHash = () => { const c = codeFromHash(); if (location.hash.startsWith('#/stocks') && c) open(c); };
     window.addEventListener('hashchange', onHash);
     cleanups.push(() => window.removeEventListener('hashchange', onHash));
@@ -998,7 +1016,7 @@ export const stocksPage: Page = {
     store.load();
     syncWatchSubs();
     code = '';
-    open(codeFromHash() || LS.get('stkCode') || curGroup()?.codes[0] || '2330');
+    open(codeFromHash() || LS.get('stkCode') || (isOptG() ? hub.futKey : curGroup()?.codes[0]) || '2330');
     frame();
   },
   unmount() {
