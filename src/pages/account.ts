@@ -1,13 +1,14 @@
 // 帳務頁（需求：docs/ai/requirements.md 第 1、3、6 輪）
 //   上：期貨權益與風險｜組合 Greeks｜證券摘要與交割款
 //   中：期權部位（即時損益、Delta、IV）｜到期損益圖
-//   下：證券庫存（今日損益、市值佔比）
+//   下：證券庫存（今日損益、市值佔比）、手續費折讓（每月，依永豐對帳單規則估算，core/fees.ts）
 //   底：已實現損益（自選期間、每日長條圖、明細）
 import { greeks, impliedVol, price as bsPrice, yearsToExpiry } from '../bs';
 import { account, type Position } from '../core/account';
 import { hub, keyOf } from '../core/hub';
 import { type Expiry, fair, rowsOf, synthetic } from '../core/optchain';
 import { cls, esc, fin, fmt, fmtP, sign, tpeNow, tpeToday, pointerHeld } from '../core/util';
+import { FEE, monthFees } from '../core/fees';
 import type { Page } from './page';
 
 const OWNER = 'account-page';
@@ -25,6 +26,11 @@ const TEMPLATE = `
       <span class="ct-r lgd"><i class="l-fut"></i>到期　<i class="l-now"></i>目前</span></div><div id="ac-payoff" class="payoff"></div></div>
   </div>
   <div class="card ov-card" id="ac-spos"></div>
+  <div class="card ov-card">
+    <div class="ct">證券手續費折讓<span class="tip" title="依永豐月對帳單的規則估算：每筆手續費＝成交金額×0.1425%（捨去）；當月累計成交前 100 萬『大戶投電子首百萬 2 折』，其後『電子單預設』2.2 折，逐筆計算。實際以永豐月對帳單為準">?</span>
+      <span class="ct-r"><select id="fee-m" class="ac-fee-m"></select></span></div>
+    <div id="ac-fee"></div>
+  </div>
   <div class="card ov-card">
     <div class="ct">已實現損益
       <span class="ct-r rl-ctl">
@@ -240,6 +246,51 @@ function renderStkPos() {
     </tbody></table></div>` : `<div class="muted">${s.errors.stkPos ? '查詢失敗：' + esc(s.errors.stkPos) : s.ready ? '目前沒有庫存' : '查詢中…'}</div>`}`;
 }
 
+// ───────── 證券手續費折讓（每月） ─────────
+let feeSeq = 0;
+const won = (n: number) => (fin(n) ? fmt(Math.round(n)) : '—');
+async function loadFee() {
+  const el = document.getElementById('ac-fee');
+  const m = (document.getElementById('fee-m') as HTMLSelectElement | null)?.value;
+  if (!el || !m) return;
+  const seq = ++feeSeq;
+  if (!el.innerHTML) el.innerHTML = '<div class="muted">查詢中…</div>';
+  try {
+    if (!account.state.ready) await account.refresh();
+    const r = await monthFees(m);
+    if (seq !== feeSeq || !mounted) return;
+    const pct = (d: number) => `${Math.round(d * 100) / 10} 折`;
+    el.innerHTML = `<div class="rl-sum ac-fee-sum">
+        <div><span>當月成交金額</span><b>${won(r.amount)}</b><small class="muted">${r.trades.length} 筆</small></div>
+        <div><span>原價手續費</span><b>${won(r.fee)}</b><small class="muted">0.1425%</small></div>
+        <div><span>首百萬 ${pct(FEE.d1)}折讓</span><b class="up">${won(r.rebate1)}</b><small class="muted">成交 ${won(r.base1)}</small></div>
+        <div><span>其後 ${pct(FEE.d2)}折讓</span><b class="up">${won(r.rebate2)}</b><small class="muted">成交 ${won(r.base2)}</small></div>
+        <div><span>預估折讓合計</span><b class="up">${won(r.rebate)}</b><small class="muted">退回金額</small></div>
+        <div><span>折後實付手續費</span><b>${won(r.net)}</b><small class="muted">${r.amount ? `實際費率 ${((r.net / r.amount) * 100).toFixed(4)}%` : ''}</small></div>
+      </div>
+      ${r.trades.length ? `<details class="rl-detail"><summary>成交明細（${r.trades.length} 筆）</summary><div class="tbl-wrap"><table class="grid"><thead><tr>
+        <th>日期</th><th>買賣</th><th>證券</th><th class="r">股數</th><th class="r">單價</th><th class="r">成交金額</th><th class="r">手續費</th></tr></thead><tbody>
+        ${r.trades.map((t) => `<tr><td>${t.date}</td><td class="${t.side === 'B' ? 'up' : 'down'}">${t.side === 'B' ? '買進' : '賣出'}</td>
+          <td>${esc(`${account.nameOf(t.code)} ${t.code}`)}</td><td class="r">${fmt(t.qty)}</td><td class="r">${fmtP(t.price)}</td>
+          <td class="r">${won(t.amount)}</td><td class="r">${won(t.fee)}</td></tr>`).join('')}
+      </tbody></table></div></details>` : '<div class="muted">這個月沒有證券成交</div>'}`;
+  } catch (err) {
+    if (seq === feeSeq) el.innerHTML = `<div class="note">查詢失敗：${esc(String((err as Error)?.message ?? err))}</div>`;
+  }
+}
+function initFeeMonths() {
+  const sel = document.getElementById('fee-m') as HTMLSelectElement;
+  const t = tpeNow();
+  const opts: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() - i, 1));
+    const ym = d.toISOString().slice(0, 7);
+    opts.push(`<option value="${ym}">${i === 0 ? '本月' : i === 1 ? '上月' : ''} ${+ym.slice(0, 4)}/${+ym.slice(5)}</option>`);
+  }
+  sel.innerHTML = opts.join('');
+  sel.addEventListener('change', () => { document.getElementById('ac-fee')!.innerHTML = ''; loadFee(); });
+}
+
 // ───────── 已實現損益（自選期間） ─────────
 let rlSeq = 0;
 async function loadRealized() {
@@ -346,6 +397,10 @@ export const accountPage: Page = {
       if (code) location.hash = `#/stocks/${code}`;
     });
     setRange('month');
+    initFeeMonths();
+    loadFee();
+    const ft = setInterval(loadFee, 5 * 60_000);
+    cleanups.push(() => clearInterval(ft));
     frame();
   },
   unmount() {

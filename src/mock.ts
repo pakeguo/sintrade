@@ -326,9 +326,25 @@ export class DemoBackend implements Backend {
         const date = d.toISOString().slice(0, 10);
         out.push(type === 'F'
           ? { id: out.length, code: seed % 2 ? 'TXFL6' : 'TXO202612' + (27600 + seed * 50) + 'C', quantity: 1 + (seed % 3), pnl: (seed - 11) * 1_900, date, direction: 'Buy' }
-          : { id: out.length, code: ['2603', '2884', '2317'][seed % 3], quantity: 1, pnl: (seed - 10) * 820, date, direction: 'Buy' });
+          : { id: out.length, code: ['2603', '2884', '2317'][seed % 3], quantity: 1 + (seed % 4), pnl: (seed - 10) * 820, date, direction: 'Buy',
+              price: [210, 30.2, 220][seed % 3] });
       }
       return out as T;
+    }
+    // 證券：已實現的買進明細（數量單位為「張」，用來測試換算）、庫存明細
+    if (path === 'profit_loss_detail' && type === 'S') {
+      const id = Number(body.detail_id);
+      const seed = (id * 7) % 5;
+      const price = [205, 29.8, 214, 31, 50][seed];
+      const q = 1 + (id % 4);
+      const t = tpeNow(); t.setUTCDate(Math.max(1, t.getUTCDate() - 1 - (id % 3)));
+      return [{ date: t.toISOString().slice(0, 10), code: '2603', quantity: q, price, fee: Math.floor(price * q * 1000 * 0.001425),
+        cost: Math.round(price * q * 1000 * 1.001425), tax: 0 }] as T;
+    }
+    if (path === 'position_detail' && type === 'S') {
+      const d = tpeNow().toISOString().slice(0, 8) + '03';
+      return [{ date: d, code: '2330', quantity: 2, price: 1380, last_price: 1450, direction: 'Buy', fee: 3933, pnl: 0 },
+        { date: '2026-01-15', code: '2884', quantity: 10, price: 31.5, last_price: 30.2, direction: 'Buy', fee: 448, pnl: 0 }] as T;
     }
     if (path === 'settlements') {
       const t = tpeNow().toISOString().slice(0, 10);
