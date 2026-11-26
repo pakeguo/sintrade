@@ -306,6 +306,8 @@ export class DemoBackend implements Backend {
     });
     for (const p of this.compSubs.values()) {
       const key = JSON.stringify(p);
+      // 實盤收不到 group_metric/weight（pitfalls #13），&noweight=1 模擬這個情況
+      if (p.kind === 'group_metric' && p.metric === 'weight' && new URLSearchParams(location.search).has('noweight')) continue;
       if (!open) {
         if (quiet || this.closeSent.has(key)) continue;
         this.closeSent.add(key);

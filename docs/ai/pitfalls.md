@@ -117,13 +117,20 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 
 **測試方式**：Playwright 用 `mouse.down()` → 等 150ms → `mouse.up()` 模擬真人點擊（腳本範例見對話紀錄 click.cjs），不要只用 `click()`。
 
-## 13. 實盤熱力圖失效（調查中，2026-11-26）
+## 13. 實盤熱力圖一直「載入中」：官方類股權重串流收不到 ⚠️
 
-- DEMO 正常、實盤「熱力圖與動畫好像失效」。尚未確認根因。
-- 已加診斷：總覽熱力圖下方顯示各類股串流收到筆數、試撮筆數、訂閱錯誤、最後收到時間；Console 印出每種串流的第一筆原始資料（`[類股串流] 第一筆`）。
-- 預防性修改：有 `groups` 就當類股資料（不依賴 `projection.kind` 的確切寫法）；試撮資料改為計數後略過。
-- 懷疑方向：盤前 08:30–09:00 只有試撮資料（被略過）；實際 projection JSON 與文件不同；某 metric（如 amount）不支援。
-- 確認後更新本條並移除診斷列。
+**現象**（2026-11-26）：DEMO 正常，實盤熱力圖空白顯示「載入中」。
+
+**根因**（由診斷列確認）：`group_metric/weight` 訂閱成功但**從未推送**（0 筆），其餘
+`contribution`、`weighted_performance`、`amount` 有收到；而 `sectorList()` 會排除沒有權重的類股 → 0 個類股。
+另外實盤 group_metric 推送頻率遠低於文件寫的「每秒一次」（幾分鐘只有 2 筆）。
+
+**解法**（`core/components.ts` 的 `deriveWeights()`）：
+- 權重（%）＝ 貢獻點數 × 10⁴ ÷（加權指數參考價 × 加權漲跌幅%）；|漲跌幅| < 0.15% 時誤差大，沿用上次值。
+- 以 0.7/0.3 平滑並存在 localStorage `mw.sectorWeights`；有官方權重時優先使用官方值。
+- DEMO 用 `&noweight=1` 模擬「收不到權重」。
+
+**通則**：shioaji 加值串流的某些 metric 可能實盤不推送或頻率很低，不要讓整個元件依賴單一 metric。
 
 ## 8. IV 與 e-Leader 不同（不是 bug）
 

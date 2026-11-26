@@ -107,7 +107,7 @@ class Components {
           }
           s.contrib = g.value; s._c = 1; s._at = now;
         }
-        if (p.metric === 'weight') s.weight = g.value;
+        if (p.metric === 'weight' && fin(g.value) && g.value > 0) { s.weight = g.value; this.officialW.add(g.category); }
         if (p.metric === 'weighted_performance') s.perf = g.value;
         if (p.metric === 'amount') {
           if (fin(s.amount) && s._a !== undefined && g.value >= s.amount) {
@@ -117,6 +117,7 @@ class Components {
           s.amount = g.value; s._a = now;
         }
       }
+      this.deriveWeights();
       this.sectorsLiveAt = Date.now();
       if (u.date || u.time) this.sectorsAsOf = `${u.date ?? ''} ${u.time ?? ''}`.trim();
       // 每 10 秒存一份到瀏覽器，盤後串流不再推送時用來顯示收盤值
@@ -127,6 +128,30 @@ class Components {
       }
     }
   }
+
+  /** 官方類股權重串流實盤收不到（pitfalls #13）→ 由「貢獻點數 ＝ 指數參考價 × 權重 × 漲跌幅」反推，並快取 */
+  private officialW = new Set<string>();
+  private derivedW = LS.getJSON<Record<string, number>>('sectorWeights', {});
+  private deriveWeights() {
+    const ixRef = hub.idx?.reference ?? NaN;
+    let changed = false;
+    for (const s of this.sectors.values()) {
+      if (this.officialW.has(s.category)) continue;
+      // 漲跌幅太接近 0 時反推誤差大，沿用上次算好的值
+      if (fin(ixRef) && ixRef > 0 && fin(s.contrib) && fin(s.perf) && Math.abs(s.perf) >= 0.15) {
+        const w = (s.contrib * 1e4) / (ixRef * s.perf); // 權重（%）
+        if (w > 0 && w < 100) {
+          const prev = this.derivedW[s.category];
+          this.derivedW[s.category] = fin(prev) ? prev * 0.7 + w * 0.3 : w; // 平滑，避免跳動
+          changed = true;
+        }
+      }
+      const w = this.derivedW[s.category];
+      if (fin(w)) s.weight = w;
+    }
+    if (changed && Date.now() - this.lastWSave > 10_000) { this.lastWSave = Date.now(); LS.setJSON('sectorWeights', this.derivedW); }
+  }
+  private lastWSave = 0;
 
   private save() {
     clearTimeout(this.saveTimer);
