@@ -1,5 +1,8 @@
 // App 外框：頁籤路由、全域報價列（加權／台指期）、連線狀態、時鐘
 import './style.css';
+import { installOrderGuard } from './core/guard';
+// 下單絕對防堵：最先執行，之後任何程式碼都無法連到下單路徑（core/guard.ts）
+installOrderGuard();
 import { initDiag } from './core/diag';
 import { hub } from './core/hub';
 import { $, cls, fin, fmt, LS, retry, session, sign } from './core/util';
@@ -9,8 +12,9 @@ import { overviewPage } from './pages/overview';
 import type { Page } from './pages/page';
 import { productsPage } from './pages/products';
 import { stocksPage } from './pages/stocks';
+import { tradePage } from './pages/trade';
 
-const PAGES: Page[] = [overviewPage, productsPage, stocksPage, optionsPage, accountPage];
+const PAGES: Page[] = [overviewPage, productsPage, stocksPage, optionsPage, tradePage, accountPage];
 let current: Page | null = null;
 
 function route() {

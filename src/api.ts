@@ -6,9 +6,13 @@ import type {
   FutContract, OptContract, OptRoot, ScannerType, ScanRow, SecType, Snap, Tick,
 } from './types';
 
+import { isOrderUrl, OrderBlockedError } from './core/guard';
+
 const BASE = '/api/v1';
 
 async function req<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+  // 下單防堵（core/guard.ts）：就算日後有人在這裡加了下單呼叫，也會在送出前被擋下
+  if (isOrderUrl(BASE + path)) throw new OrderBlockedError(BASE + path);
   const res = await fetch(BASE + path, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,

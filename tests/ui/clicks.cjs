@@ -56,11 +56,11 @@ async function slowClick(p, sel) {
   res.productTabs = `${ok}/5`;
   // 4. 頁籤切換
   ok = 0;
-  for (const t of ['overview', 'account', 'products', 'options', 'stocks']) {
+  for (const t of ['overview', 'account', 'products', 'options', 'stocks', 'trade']) {
     await slowClick(p, `#tabs a[data-id="${t}"]`); await p.waitForTimeout(1500);
     if (await p.$(`#tabs a.on[data-id="${t}"]`)) ok++;
   }
-  res.headerTabs = `${ok}/5`;
+  res.headerTabs = `${ok}/6`;
   // 5. 帳務頁（沒有期權部位時到期損益圖顯示提示文字）：頁籤與期間按鈕都要點得到（pitfalls #17）
   ok = 0;
   for (const t of ['overview', 'account', 'products', 'account', 'options']) {

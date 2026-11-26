@@ -19,6 +19,7 @@ import type { Bar, Contract, Info, Tick } from '../types';
 import type { Page } from './page';
 import { applyTick, buildBars, INTERVALS, isMinute, labelOf, type Interval } from '../core/bars';
 import { TAView } from '../ui/taview';
+import { TIER, TIER_COLOR, tierOf } from '../core/flow';
 import { limitZoom, resetZoom } from '../ui/zoom';
 
 const OWNER_WL = 'stocks-watch';
@@ -741,13 +742,6 @@ function renderBook() {
   document.getElementById('sbook')!.innerHTML = h;
 }
 
-/** 混合分級：金額與張數都達標才算該級（低等級因此較寬）。
- *  預設：散戶 <100萬或≤2張、中實戶 ≥100萬且≥3張、大戶 ≥500萬且≥10張、法人級 ≥2,000萬且≥50張 */
-const tierOf = (amt: number, lots: number) => {
-  const [a, b, c] = store.data.bigTiers;
-  const [la, lb, lc] = store.data.bigLots ?? [3, 10, 50];
-  return amt >= c && lots >= lc ? 3 : amt >= b && lots >= lb ? 2 : amt >= a && lots >= la ? 1 : 0;
-};
 /** 期貨／選擇權：以單筆口數分級（中實戶／大戶／法人級的門檻），依商品大小調整 */
 function lotTiers(): [number, number, number] {
   if (contract?.security_type === 'OPT') return [10, 50, 200];
@@ -761,8 +755,6 @@ function tierT(t: Tick) {
   return t.vol >= c ? 3 : t.vol >= b ? 2 : t.vol >= a ? 1 : 0;
 }
 const valT = (t: Tick) => (deriv ? t.vol : t.price * t.vol * 1000);
-const TIER = ['散戶', '中實戶', '大戶', '法人級'];
-const TIER_COLOR = ['#8b95a3', '#8fb3ff', '#f5b94a', '#d17cff'];
 const wan = (n: number) => (deriv ? Math.round(n).toLocaleString() + '口' : Math.abs(n) >= 1e8 ? (n / 1e8).toFixed(2) + '億' : Math.round(n / 1e4).toLocaleString() + '萬');
 
 function renderFlow() {
