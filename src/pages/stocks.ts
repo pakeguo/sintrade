@@ -37,7 +37,7 @@ const TEMPLATE = `
     </div>
     <div id="live" class="stk-live">
       <div class="card lv-chart"><div class="ichart"><div id="ichart" class="fc-in"></div></div>
-        <div class="lgd"><button id="izoom-reset" class="zoom-reset" title="回到 09:00–13:30 完整時段">⟲ 重置</button><i class="l-px"></i>成交價　<i class="l-vwap"></i>VWAP 均價　<span class="dash">- - </span>參考價</div></div>
+        <div class="lgd"><button id="izoom-reset" class="zoom-reset" title="回到 09:00–13:30 完整時段">⟲ 重置</button><i class="l-px"></i>成交價（右軸）　<i class="l-ixo"></i>加權（左軸）　<i class="l-vwap"></i>VWAP 均價　<span class="dash">- - </span>參考價</div></div>
       <div class="lv-side">
         <div class="card"><div class="ct">五檔</div><div id="sbook" class="book"></div></div>
         <div class="card"><div class="ct">內外盤<span class="tip" title="外盤：買方主動吃賣單成交；內盤：賣方主動砸買單成交">?</span></div><div id="inout"></div></div>
@@ -201,7 +201,9 @@ function chartOpts() {
 
 let refPx = NaN;                                // 參考價：分時圖價格軸以它為中心上下對稱
 let axisLine: ISeriesApi<'Line'> | null = null;
-let ichartRO: ResizeObserver | null = null;  // 只放空白點，撐出 09:00–13:30 的完整時間軸
+let ichartRO: ResizeObserver | null = null;
+let ixOverlay: ISeriesApi<'Line'> | null = null;    // 疊加的加權指數（左軸）
+let ixLastT = 0, ixDay = '';  // 只放空白點，撐出 09:00–13:30 的完整時間軸
 
 /** 價格軸以參考價為中心、上下對稱，最小 ±0.5%（小波動不會被放大成劇烈起伏） */
 const symmetricScale = (orig: () => { priceRange: { minValue: number; maxValue: number } } | null) => {
@@ -218,6 +220,8 @@ function initIntraday() {
     timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 0 },
     // 預設上 20%、下 10% 的留白會讓參考價偏下 → 上下留白一致，漲跌兩邊等高
     rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.06 } },
+    // 左側：加權指數（與個股各自以參考價置中，參考價落在同一水平線，強弱一眼可比）
+    leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.06 } },
   });
   // 圖表大小改變（含從「K 線分析」切回、原本寬度 0）→ 重新鋪滿 09:00–13:30（pitfalls #7b）
   let lastW = 0;
@@ -233,6 +237,17 @@ function initIntraday() {
     color: 'rgba(0,0,0,0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   });
   pxLine = ichart.addSeries(LineSeries, { color: '#c9d1d9', lineWidth: 2, priceLineVisible: false, autoscaleInfoProvider: symmetricScale });
+  ixOverlay = ichart.addSeries(LineSeries, {
+    priceScaleId: 'left', color: 'rgba(143,179,255,.75)', lineWidth: 1, priceLineVisible: false, lastValueVisible: true,
+    crosshairMarkerVisible: false, title: '加權',
+    autoscaleInfoProvider: (orig: () => { priceRange: { minValue: number; maxValue: number } } | null) => {
+      const r = orig();
+      const ref = hub.idx?.reference ?? NaN;
+      if (!r || !fin(ref)) return r;
+      const d = Math.max(Math.abs(r.priceRange.maxValue - ref), Math.abs(r.priceRange.minValue - ref), ref * 0.005);
+      return { ...r, priceRange: { minValue: ref - d * 1.04, maxValue: ref + d * 1.04 } };
+    },
+  });
   vwLine = ichart.addSeries(LineSeries, { color: cssVar('--accent'), lineWidth: 1, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, autoscaleInfoProvider: symmetricScale });
   ivol = ichart.addSeries(HistogramSeries, { priceScaleId: 'v', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
   ichart.priceScale('v').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
@@ -255,9 +270,29 @@ function setIntraday(bars: Bar[]) {
   for (let m = 9 * 60; m <= 13 * 60 + 30; m++) axis.push({ time: (d0 + m * 60) as UTCTimestamp });
   axisLine!.setData(axis);
   fAxis?.setData(axis);
+  loadIndexOverlay(last || tpeToday());
   fitSession();
   fitFlow();
   flowTicksLen = -1;
+}
+
+/** 加權指數同一天的 1 分 K（09:01–13:30）疊到左軸 */
+async function loadIndexOverlay(date: string) {
+  ixDay = date; ixLastT = 0;
+  const bars = await hub.be.kbars(hub.ixContract, date, date).catch(() => [] as Bar[]);
+  if (!ixOverlay || ixDay !== date) return;
+  const day = bars.filter((b) => new Date(b.t * 1000).toISOString().slice(0, 10) === date);
+  ixOverlay.setData(day.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
+  ixLastT = day.length ? day[day.length - 1].t : 0;
+}
+
+function onIndex(i: import('../types').IndexQuote) {
+  if (i.code !== 'IX0001' || !ixOverlay || !i.t || !fin(i.close)) return;
+  const b = Math.ceil(i.t / 60) * 60;
+  const d = new Date(b * 1000), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  if (d.toISOString().slice(0, 10) !== ixDay || m < 9 * 60 || m > 13 * 60 + 30 || b < ixLastT) return;
+  ixLastT = b;
+  ixOverlay.update({ time: b as UTCTimestamp, value: i.close });
 }
 
 /** 顯示範圍＝ 09:00 到 13:30（axis 的第 0 到最後一點）；等版面量好寬度再設定（pitfalls #7b） */
@@ -667,6 +702,7 @@ export const stocksPage: Page = {
     renderGroups();
     cleanups.push(hub.on('change', () => { dirty = true; }));
     cleanups.push(hub.on('tick', onTick));
+    cleanups.push(hub.on('index', onIndex));
     cleanups.push(account.on(() => { dirty = true; syncWatchSubs(); }));
     cleanups.push(store.on(() => { renderGroups(); syncWatchSubs(); dirty = true; }));
     const onHash = () => { const c = codeFromHash(); if (location.hash.startsWith('#/stocks') && c) open(c); };
@@ -695,7 +731,7 @@ export const stocksPage: Page = {
     fchartRO?.disconnect(); fchartRO = null;
     fchart?.remove(); fchart = null; fLines = []; fAxis = null; flowTicksLen = -1;
     ichart?.remove(); kchart?.remove(); rchart?.remove();
-    ichart = kchart = rchart = null; pxLine = vwLine = axisLine = null; ivol = null; candle = null; kvol = null; rsiS = null;
+    ichart = kchart = rchart = null; pxLine = vwLine = axisLine = ixOverlay = null; ixDay = ''; ivol = null; candle = null; kvol = null; rsiS = null;
     maS = []; bbS = []; refLine = null;
   },
 };

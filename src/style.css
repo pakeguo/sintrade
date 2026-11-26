@@ -233,7 +233,7 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .lv-chart { display: flex; flex-direction: column; }
 .lv-chart .ichart { flex: 1 0 auto; position: relative; }
 .lv-chart .lgd { margin: 4px 0 0; display: block; }
-.l-px { background: #c9d1d9; } .l-vwap { background: var(--accent); } .dash { color: var(--muted); letter-spacing: -1px; }
+.l-px { background: #c9d1d9; } .l-ixo { background: rgba(143,179,255,.75); } .l-vwap { background: var(--accent); } .dash { color: var(--muted); letter-spacing: -1px; }
 .lv-side { display: flex; flex-direction: column; gap: 10px; }
 .lv-side .card { min-height: 0; }
 /* 三欄上下切齊：中間欄最後一張卡（大單統計）往下填滿，高度跟走勢圖一致 */
