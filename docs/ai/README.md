@@ -32,6 +32,8 @@ src/
     util.ts          格式化、台北時間、交易時段 session()、到期判斷 isLive()、LS 儲存、retry()
     optchain.ts      臺指選擇權共用：到期日清單、T 字列、合成期貨、computeMetrics()（期權頁與總覽共用）
     components.ts    權值股前 20（權重快取於 localStorage）、產業類股（index_components 串流），use/unuse 引用計數
+    bars.ts          K 棒週期：1/3/5/15/30/自訂分（以 09:00 起每 N 分、結束時間標記）、日／週／月、還原日（exRights＋adjust 向前調整）
+    ta.ts            技術指標庫（主圖 7：MA/EMA/BOLL/ENV/SAR/一目/均價；副圖 18：VOL/MACD/KD/RSI/DMI/OBV/CCI/WR/BIAS/PSY/ATR/MTM/ROC/TRIX/DMA/MFI/ARBR/VR/CMO）
     catalog.ts       股票目錄：代碼→名稱／產業／交易所。stockList()＋逐檔 contractInfo 背景建立，localStorage `mw.catalog` 快取 7 天；search()、industries()、byIndustry()
     nav.ts           openTA()：點商品要去哪（之後換成技術分析窗口）
     store.ts         使用者設定（自選群組、大單門檻）：經 phone-server 開啟時存 mywatch-store.json（電腦手機同步），否則 localStorage
@@ -48,6 +50,7 @@ src/
                      K 線（日週月、MA、布林、RSI、分價量表）
     blueprint.ts     藍圖頁產生器
   ui/
+    taview.ts        技術分析畫面：1 主（K＋量＋疊加）2 副，指標與參數存 localStorage `mw.taCfg`
     picker.ts        報價頁搜尋列（代碼／名稱）＋「選股」視窗（類股、成交量前 50、成交值前 50），加入到自選群組
     tchain.ts        精簡 T 字報價元件（結算日小卡、指標列、價平 ±N 檔）
     heatmap.ts       類股熱力圖 Canvas 渲染器（squarify 版面、緩動、粒子、光暈、tooltip；隱藏分頁自動暫停）
@@ -56,7 +59,7 @@ src/
   bs.ts              Black-76
   types.ts           型別與 Backend 介面
   style.css          深色主題、紅漲綠跌、頁籤、手機版面
-phone-server.mjs     轉接站（白名單：行情＋帳務查詢；封鎖 /order/*）；/mw/store 設定同步；本機 127.0.0.1 免密碼
+phone-server.mjs     轉接站：/mw/exright?code= 代抓證交所 TWT49U＋櫃買 exDailyQ 近 4 年除權息（快取 mywatch-exright.json 12 小時）；（白名單：行情＋帳務查詢；封鎖 /order/*）；/mw/store 設定同步；本機 127.0.0.1 免密碼
                      → 建議電腦也用 http://localhost:5180 開啟，自選清單才會與手機同步
 ```
 

@@ -13,6 +13,8 @@ import { store } from '../core/store';
 import { cls, compactMq, cssVar, esc, fin, fmt, fmtP, LS, sign, tpeToday, pointerHeld } from '../core/util';
 import type { Bar, Contract, Info, Tick } from '../types';
 import type { Page } from './page';
+import { buildBars, INTERVALS, isMinute, labelOf, type Interval } from '../core/bars';
+import { TAView } from '../ui/taview';
 import { limitZoom, resetZoom } from '../ui/zoom';
 
 const OWNER_WL = 'stocks-watch';
@@ -30,8 +32,8 @@ const TEMPLATE = `
   <section class="sm">
     <div id="sh" class="sh"></div>
     <div class="sm-bar">
-      <div class="seg" id="mode"><button data-m="live">盤中</button><button data-m="k">K 線分析</button></div>
-      <div class="seg" id="kunit"><button data-u="day">日K</button><button data-u="week">週K</button><button data-u="month">月K</button></div>
+      <div class="seg" id="mode"><button data-m="live">盤中</button><button data-m="k">K線</button><button data-m="ta">技術分析</button></div>
+      <div class="seg" id="kunit"></div>
       <div class="seg tg" id="ktog"><button data-t="ma">均線</button><button data-t="bb">布林</button><button data-t="rsi">RSI</button><button data-t="vp">分價量</button></div>
       <button id="add-watch" class="addw">＋ 加入自選</button>
     </div>
@@ -47,6 +49,7 @@ const TEMPLATE = `
       </div>
       <div class="card lv-ticks"><div class="ct">逐筆成交<label class="ct-r"><input type="checkbox" id="only-big"> 只看大單</label></div><div id="ticks" class="ticks"></div></div>
     </div>
+    <div id="taview" class="card stk-ta" hidden></div>
     <div id="kview" class="kview" hidden>
       <div class="card k-card"><div class="k-wrap"><div id="kchart" class="kchart"></div><div id="vp" class="vp"></div></div>
         <div id="kinfo" class="kinfo"></div><div id="rchart" class="rchart"></div></div>
@@ -62,8 +65,10 @@ const cleanups: (() => void)[] = [];
 let code = '';
 let contract: Contract | null = null;
 let info: Info | null = null;
-let mode: 'live' | 'k' = (LS.get('stkMode') as 'live' | 'k') ?? 'live';
-let kunit: 'day' | 'week' | 'month' = (LS.get('stkUnit') as 'day' | 'week' | 'month') ?? 'day';
+type Mode = 'live' | 'k' | 'ta';
+let mode: Mode = (LS.get('stkMode') as Mode) ?? 'live';
+let kunit: Interval = LS.get('stkUnit') ?? 'day';
+let taView: TAView | null = null;
 const tog = LS.getJSON<Record<string, boolean>>('stkTog', { ma: true, bb: false, rsi: true, vp: true });
 let groupId = LS.get('stkGroup') ?? '';
 let ticks: Tick[] = [];
@@ -169,6 +174,7 @@ async function open(c: string) {
     hub.be.ticksDay(ct, lastDay).then((t) => { if (seq === loadSeq) { ticks = t; dirty = true; } }).catch(() => undefined);
   });
   if (mode === 'k') loadK();
+  if (mode === 'ta') loadTA();
 }
 
 async function loadMinutes(ct: Contract, days: number): Promise<Bar[]> {
@@ -332,6 +338,7 @@ let maS: ISeriesApi<'Line'>[] = [];
 let bbS: ISeriesApi<'Line'>[] = [];
 let rsiS: ISeriesApi<'Line'> | null = null;
 let kBars: Bar[] = [];
+let kNote = '';
 let vpBars: Bar[] = [];
 const MA = [[5, '#f5b94a'], [10, '#8fb3ff'], [20, '#d17cff'], [60, '#5fd3c6']] as const;
 
@@ -361,12 +368,13 @@ function initK() {
 async function loadK() {
   if (!contract || !kchart) return;
   const seq = loadSeq;
-  document.getElementById('kinfo')!.textContent = '載入 K 線…（一年的 1 分 K，第一次較久）';
-  const bars = await loadMinutes(contract, kunit === 'day' ? 200 : 400);
+  document.getElementById('kinfo')!.textContent = `載入 ${labelOf(kunit)}…（第一次較久）`;
+  const built = await buildBars(contract, kunit);
   if (seq !== loadSeq || !mounted || !kchart) return;
-  const days = toDaily(bars);
-  kBars = kunit === 'day' ? days : regroup(days, kunit);
-  vpBars = bars;
+  kBars = built.bars;
+  vpBars = built.minute;
+  kchart.applyOptions({ timeScale: { timeVisible: isMinute(kunit) } });
+  kNote = built.note ?? '';
   const closes = kBars.map((b) => b.c);
   const T = (b: Bar) => b.t as UTCTimestamp;
   candle!.setData(kBars.map((b) => ({ time: T(b), open: b.o, high: b.h, low: b.l, close: b.c })));
@@ -387,7 +395,7 @@ async function loadK() {
     if (!kchart || !el) return;
     kchart.resize(el.clientWidth, el.clientHeight);
     rchart?.resize(el.clientWidth, document.getElementById('rchart')!.clientHeight);
-    kchart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - (kunit === 'day' ? 90 : 60)), to: n + 2 });
+    kchart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - (kunit === 'week' || kunit === 'month' ? 60 : 90)), to: n + 2 });
   };
   requestAnimationFrame(() => requestAnimationFrame(fit));
   const lastR = r[r.length - 1];
@@ -395,8 +403,20 @@ async function loadK() {
     (tog.ma ? MA.map(([p, c], i) => { const v = sma(closes, p); return `<span style="color:${c}">MA${p} ${fmtP(v[v.length - 1])}</span>`; }).join('') : '') +
     (tog.bb ? `<span class="muted">布林 ${fmtP(bb.up[n - 1])} / ${fmtP(bb.dn[n - 1])}</span>` : '') +
     (tog.rsi ? `<span style="color:#d17cff">RSI14 ${fin(lastR) ? lastR.toFixed(1) : '—'}${lastR > 70 ? ' 過熱' : lastR < 30 ? ' 超賣' : ''}</span>` : '') +
-    (tog.vp ? '<span class="accent">▮ 分價量（可視範圍）、◆ 成交最密集價位</span>' : '');
+    (tog.vp ? '<span class="accent">▮ 分價量（可視範圍）、◆ 成交最密集價位</span>' : '') +
+    (kNote ? `<span class="${/需要|無法|失敗/.test(kNote) ? 'note' : 'muted'}">${esc(kNote)}</span>` : '');
   renderVP();
+}
+
+/** 技術分析畫面：1 主 2 副（ui/taview.ts），週期與 K線共用 */
+async function loadTA() {
+  if (!contract) return;
+  const el = document.getElementById('taview')!;
+  taView ??= new TAView(el);
+  const seq = loadSeq;
+  const built = await buildBars(contract, kunit);
+  if (seq !== loadSeq || !mounted || !taView) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => taView?.setBars(built.bars, isMinute(kunit))));
 }
 
 /** 分價量表：統計目前可視範圍內的成交量分布，畫在 K 線右側 */
@@ -406,7 +426,7 @@ function renderVP() {
   if (!tog.vp || !kBars.length) { el.innerHTML = ''; return; }
   const r = kchart.timeScale().getVisibleLogicalRange();
   const from = kBars[Math.max(0, Math.floor(r?.from ?? 0))]?.t ?? 0;
-  const to = (kBars[Math.min(kBars.length - 1, Math.ceil(r?.to ?? kBars.length))]?.t ?? Infinity) + (kunit === 'month' ? 31 : kunit === 'week' ? 7 : 1) * 86400;
+  const to = (kBars[Math.min(kBars.length - 1, Math.ceil(r?.to ?? kBars.length))]?.t ?? Infinity) + (isMinute(kunit) ? Number(kunit.slice(1)) * 60 : (kunit === 'month' ? 31 : kunit === 'week' ? 7 : 1) * 86400);
   const { rows, poc } = volumeProfile(vpBars.filter((b) => b.t >= from && b.t < to), 32);
   const mx = Math.max(1, ...rows.map((x) => x.v));
   el.innerHTML = rows.map((x) => {
@@ -577,11 +597,14 @@ function renderTicks() {
 
 function applyMode() {
   document.querySelectorAll<HTMLElement>('#mode button').forEach((b) => b.classList.toggle('on', b.dataset.m === mode));
-  document.querySelectorAll<HTMLElement>('#kunit button').forEach((b) => b.classList.toggle('on', b.dataset.u === kunit));
+  const custom = isMinute(kunit) && !INTERVALS.some((x) => x[0] === kunit);
+  document.getElementById('kunit')!.innerHTML = INTERVALS.map(([id, name]) =>
+    `<button data-u="${id}" class="${id === kunit || (id === 'custom' && custom) ? 'on' : ''}">${id === 'custom' && custom ? labelOf(kunit) : name}</button>`).join('');
   document.querySelectorAll<HTMLElement>('#ktog button').forEach((b) => b.classList.toggle('on', !!tog[b.dataset.t!]));
   document.getElementById('live')!.hidden = mode !== 'live';
   document.getElementById('kview')!.hidden = mode !== 'k';
-  document.getElementById('kunit')!.hidden = mode !== 'k';
+  document.getElementById('taview')!.hidden = mode !== 'ta';
+  document.getElementById('kunit')!.hidden = mode === 'live';
   document.getElementById('ktog')!.hidden = mode !== 'k';
 }
 
@@ -663,16 +686,23 @@ function bind(el: HTMLElement) {
     });
   });
   el.querySelector('#mode')!.addEventListener('click', (ev) => {
-    const m = (ev.target as HTMLElement).dataset.m as 'live' | 'k' | undefined;
+    const m = (ev.target as HTMLElement).dataset.m as Mode | undefined;
     if (!m || m === mode) return;
     mode = m; LS.set('stkMode', m); applyMode(); dirty = true;
     if (m === 'live') { fitSession(); fitFlow(); }
     if (m === 'k') loadK();
+    if (m === 'ta') loadTA();
   });
   el.querySelector('#kunit')!.addEventListener('click', (ev) => {
-    const u = (ev.target as HTMLElement).dataset.u as typeof kunit | undefined;
+    let u = (ev.target as HTMLElement).closest<HTMLElement>('[data-u]')?.dataset.u;
     if (!u) return;
-    kunit = u; LS.set('stkUnit', u); applyMode(); loadK();
+    if (u === 'custom') {
+      const n = Number(prompt('自訂幾分鐘一根 K 棒？（2–240）', isMinute(kunit) ? kunit.slice(1) : '10'));
+      if (!(n >= 1 && n <= 240)) return;
+      u = 'm' + Math.round(n);
+    }
+    kunit = u; LS.set('stkUnit', u); applyMode();
+    if (mode === 'ta') loadTA(); else loadK();
   });
   el.querySelector('#ktog')!.addEventListener('click', (ev) => {
     const k = (ev.target as HTMLElement).dataset.t;
@@ -692,7 +722,7 @@ export const stocksPage: Page = {
     dirty = true;
     el.innerHTML = TEMPLATE;
     // 每次進入都重新讀取模式（商品頁點小卡會先設定成 K 線模式，見 core/nav.ts）
-    mode = (LS.get('stkMode') as 'live' | 'k') ?? 'live';
+    mode = (LS.get('stkMode') as Mode) ?? 'live';
     bind(el);
     applyMode();
     initIntraday();
@@ -728,6 +758,7 @@ export const stocksPage: Page = {
     wlSubs = new Set();
     contract = null; code = '';
     ichartRO?.disconnect(); ichartRO = null;
+    taView?.destroy(); taView = null;
     fchartRO?.disconnect(); fchartRO = null;
     fchart?.remove(); fchart = null; fLines = []; fAxis = null; flowTicksLen = -1;
     ichart?.remove(); kchart?.remove(); rchart?.remove();

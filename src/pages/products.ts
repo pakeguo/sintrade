@@ -206,7 +206,10 @@ function bind(el: HTMLElement) {
       store.update(() => { const g = store.data.groups.find((x) => x.id === tab); if (g) g.codes = g.codes.filter((c) => c !== rm); });
       return;
     }
-    const key = t.closest<HTMLElement>('.qc[data-key]')?.dataset.key;
+  });
+  // 連點兩下才跳轉（單擊不動作，避免誤觸）
+  grid.addEventListener('dblclick', (ev) => {
+    const key = (ev.target as HTMLElement).closest<HTMLElement>('.qc[data-key]')?.dataset.key;
     const it = items.find((i) => keyOf(i.c) === key);
     if (it) openTA(it.c);
   });

@@ -3,3 +3,4 @@ dist
 .env
 mywatch-store.json
 mywatch-store.json.tmp
+mywatch-exright.json

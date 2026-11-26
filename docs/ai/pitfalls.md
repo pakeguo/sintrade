@@ -179,6 +179,13 @@ DEMO 預設有期權部位，所以測試沒觸發。
 - 測試要包含「空資料」情境（沒有部位、沒有庫存、商品檔尚未載入）。
 - 問題偵測器 `core/diag.ts`：錯誤、長任務、點擊被大面積覆蓋層攔截 → 畫面底部紅色提示列。
 
+## 18. 證交所網站擋雲端機房 IP；Node fetch 不走 HTTPS_PROXY
+
+- `www.twse.com.tw` 從雲端開發環境回「因為安全性考量…」或 HTTP 307 → 無法在雲端驗證 TWT49U 格式（櫃買 `www.tpex.org.tw` 可以）。
+  使用者家中電腦（台灣家用網路）預期可用；欄位依名稱解析（日期／代號／前收盤／參考價），兩邊格式差異不影響。
+- 雲端測試 phone-server 時 Node 內建 fetch 不吃代理 → 用 `NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt node phone-server.mjs`。
+- `openapi.twse.com.tw` 只有預告表（TWT48U_ALL），沒有歷史除權息，不能拿來還原。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

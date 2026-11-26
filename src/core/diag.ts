@@ -41,7 +41,7 @@ export function initDiag() {
   }, true);
   try {
     new PerformanceObserver((list) => {
-      for (const en of list.getEntries()) if (en.duration > 300) show(`畫面卡住 ${Math.round(en.duration)} ms（${lastSection || '未知區塊'}）`);
+      for (const en of list.getEntries()) if (en.duration > 1500) show(`畫面卡住 ${Math.round(en.duration)} ms（${lastSection || '未知區塊'}）`);
     }).observe({ type: 'longtask', buffered: false });
   } catch { /* 瀏覽器不支援 longtask */ }
 }
@@ -53,6 +53,6 @@ export function section(name: string, fn: () => void) {
   const t0 = performance.now();
   try { fn(); } catch (e) { show(`${name} 出錯：${String((e as Error)?.stack ?? e).split('\n').slice(0, 2).join(' | ')}`); }
   const dt = performance.now() - t0;
-  if (dt > 150) show(`${name} 繪製耗時 ${Math.round(dt)} ms`);
+  if (dt > 300) show(`${name} 繪製耗時 ${Math.round(dt)} ms`);
   lastSection = '';
 }
