@@ -7,7 +7,7 @@ import type { Bar, Contract } from '../types';
 
 export type Interval = string; // 'm1' 'm3' 'm5' 'm15' 'm30' 'm<N>' 'day' 'week' 'month' 'adj'
 export const INTERVALS: [Interval, string][] = [
-  ['m1', '1分'], ['m3', '3分'], ['m5', '5分'], ['m15', '15分'], ['m30', '30分'], ['custom', '自訂'],
+  ['m1', '1分'], ['m3', '3分'], ['m5', '5分'], ['m15', '15分'], ['m30', '30分'],
   ['day', '日K'], ['week', '週K'], ['month', '月K'], ['adj', '還原日K'],
 ];
 export const isMinute = (iv: Interval) => /^m\d+$/.test(iv);
@@ -84,4 +84,30 @@ export async function buildBars(c: Contract, iv: Interval): Promise<{ bars: Bar[
     return { bars: adjust(days, list), minute, note: error ?? (list.length ? `已還原 ${list.length} 次除權息` : '期間內沒有除權息') };
   }
   return { bars: days, minute };
+}
+
+/** 即時成交 → 更新（或新增）最後一根 K 棒；回傳是否有變動。規則與 aggregateMinutes／toDaily／regroup 一致 */
+export function applyTick(bars: Bar[], iv: Interval, t: number, price: number, vol: number): boolean {
+  if (!Number.isFinite(price) || price <= 0) return false;
+  const day = Math.floor(t / 86400) * 86400;
+  const m1 = Math.ceil((t - day) / 60);                       // 1 分 K 以結束時間標記
+  if (m1 < 9 * 60 || m1 > 13 * 60 + 30 + 1) return false;      // 只處理現股交易時段
+  let key: number;
+  if (isMinute(iv)) {
+    const n = minutesOf(iv);
+    const end = Math.min(13 * 60 + 30, 9 * 60 + Math.ceil((m1 - 9 * 60) / n) * n);
+    key = day + Math.max(end, 9 * 60 + n) * 60;
+  } else if (iv === 'week') {
+    key = day - ((new Date(day * 1000).getUTCDay() + 6) % 7) * 86400;
+  } else if (iv === 'month') {
+    const d = new Date(day * 1000); key = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
+  } else key = day;                                            // 日K、還原日K（最新一天還原係數為 1）
+  const last = bars[bars.length - 1];
+  if (last && last.t === key) {
+    last.h = Math.max(last.h, price); last.l = Math.min(last.l, price); last.c = price; last.v += vol;
+    return true;
+  }
+  if (last && key < last.t) return false;
+  bars.push({ t: key, o: price, h: price, l: price, c: price, v: vol });
+  return true;
 }

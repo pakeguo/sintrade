@@ -13,7 +13,7 @@ import { store } from '../core/store';
 import { cls, compactMq, cssVar, esc, fin, fmt, fmtP, LS, sign, tpeToday, pointerHeld } from '../core/util';
 import type { Bar, Contract, Info, Tick } from '../types';
 import type { Page } from './page';
-import { buildBars, INTERVALS, isMinute, labelOf, type Interval } from '../core/bars';
+import { applyTick, buildBars, INTERVALS, isMinute, labelOf, type Interval } from '../core/bars';
 import { TAView } from '../ui/taview';
 import { limitZoom, resetZoom } from '../ui/zoom';
 
@@ -313,8 +313,23 @@ function fitSession() {
 }
 const ISESSION = { from: -6, to: 270 + 6 }; // 09:00（第 0 點）–13:30（第 270 點），兩端留邊距
 
+/** K線／技術分析即時更新：成交進來就更新最後一根，重畫節流為每秒一次 */
+let kLiveDirty = false;
+function liveBars(t: Tick) {
+  if (t.simtrade) return;
+  if (mode === 'k' && kBars.length && applyTick(kBars, kunit, t.t, t.price, t.vol)) kLiveDirty = true;
+  if (mode === 'ta' && taBars.length && applyTick(taBars, kunit, t.t, t.price, t.vol)) kLiveDirty = true;
+}
+function flushLive() {
+  if (!kLiveDirty || pointerHeld()) return;
+  kLiveDirty = false;
+  if (mode === 'k') renderK(false);
+  if (mode === 'ta') taView?.update(taBars);
+}
+
 function onTick(t: Tick) {
   if (t.code !== code) return;
+  liveBars(t);
   ticks.push(t);
   if (ticks.length > 20000) ticks.splice(0, 5000);
   if (!pxLine) return;
@@ -339,6 +354,7 @@ let bbS: ISeriesApi<'Line'>[] = [];
 let rsiS: ISeriesApi<'Line'> | null = null;
 let kBars: Bar[] = [];
 let kNote = '';
+let taBars: Bar[] = [];
 let vpBars: Bar[] = [];
 const MA = [[5, '#f5b94a'], [10, '#8fb3ff'], [20, '#d17cff'], [60, '#5fd3c6']] as const;
 
@@ -375,6 +391,12 @@ async function loadK() {
   vpBars = built.minute;
   kchart.applyOptions({ timeScale: { timeVisible: isMinute(kunit) } });
   kNote = built.note ?? '';
+  renderK(true);
+}
+
+/** 依 kBars 重畫 K線圖；fit=true 時重設可視範圍（載入時），即時更新時不動使用者的縮放 */
+function renderK(fit: boolean) {
+  if (!kchart || !candle) return;
   const closes = kBars.map((b) => b.c);
   const T = (b: Bar) => b.t as UTCTimestamp;
   candle!.setData(kBars.map((b) => ({ time: T(b), open: b.o, high: b.h, low: b.l, close: b.c })));
@@ -390,14 +412,14 @@ async function loadK() {
   document.getElementById('rchart')!.hidden = !tog.rsi;
   const n = kBars.length;
   // K 線圖剛從隱藏切成顯示時，寬度要等下一個畫面才量得到；太早設定範圍會把 K 棒擠成一團
-  const fit = () => {
+  const fitK = () => {
     const el = document.getElementById('kchart');
     if (!kchart || !el) return;
     kchart.resize(el.clientWidth, el.clientHeight);
     rchart?.resize(el.clientWidth, document.getElementById('rchart')!.clientHeight);
     kchart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - (kunit === 'week' || kunit === 'month' ? 60 : 90)), to: n + 2 });
   };
-  requestAnimationFrame(() => requestAnimationFrame(fit));
+  if (fit) requestAnimationFrame(() => requestAnimationFrame(fitK));
   const lastR = r[r.length - 1];
   document.getElementById('kinfo')!.innerHTML =
     (tog.ma ? MA.map(([p, c], i) => { const v = sma(closes, p); return `<span style="color:${c}">MA${p} ${fmtP(v[v.length - 1])}</span>`; }).join('') : '') +
@@ -416,7 +438,8 @@ async function loadTA() {
   const seq = loadSeq;
   const built = await buildBars(contract, kunit);
   if (seq !== loadSeq || !mounted || !taView) return;
-  requestAnimationFrame(() => requestAnimationFrame(() => taView?.setBars(built.bars, isMinute(kunit))));
+  taBars = built.bars;
+  requestAnimationFrame(() => requestAnimationFrame(() => taView?.setBars(taBars, isMinute(kunit))));
 }
 
 /** 分價量表：統計目前可視範圍內的成交量分布，畫在 K 線右側 */
@@ -595,11 +618,20 @@ function renderTicks() {
   document.getElementById('ticks')!.innerHTML = out.join('') || '<div class="muted">尚無成交</div>';
 }
 
+function setInterval2(u: string) {
+  kunit = u; LS.set('stkUnit', u); applyMode();
+  if (mode === 'ta') loadTA(); else loadK();
+}
+
 function applyMode() {
   document.querySelectorAll<HTMLElement>('#mode button').forEach((b) => b.classList.toggle('on', b.dataset.m === mode));
   const custom = isMinute(kunit) && !INTERVALS.some((x) => x[0] === kunit);
-  document.getElementById('kunit')!.innerHTML = INTERVALS.map(([id, name]) =>
-    `<button data-u="${id}" class="${id === kunit || (id === 'custom' && custom) ? 'on' : ''}">${id === 'custom' && custom ? labelOf(kunit) : name}</button>`).join('');
+  const btn = ([id, name]: [string, string]) => `<button data-u="${id}" class="${id === kunit ? 'on' : ''}">${name}</button>`;
+  const mins = INTERVALS.filter(([id]) => isMinute(id)), rest = INTERVALS.filter(([id]) => !isMinute(id));
+  // 比照券商：分鐘按鈕後面放一個輸入欄，輸入分鐘數按 Enter 套用
+  document.getElementById('kunit')!.innerHTML = mins.map(btn).join('') +
+    `<span class="kmin${custom ? ' on' : ''}"><input id="kmin" type="number" min="1" max="240" placeholder="分" value="${custom ? kunit.slice(1) : ''}" title="自訂分鐘，輸入後按 Enter">分</span>` +
+    rest.map(btn).join('');
   document.querySelectorAll<HTMLElement>('#ktog button').forEach((b) => b.classList.toggle('on', !!tog[b.dataset.t!]));
   document.getElementById('live')!.hidden = mode !== 'live';
   document.getElementById('kview')!.hidden = mode !== 'k';
@@ -694,15 +726,15 @@ function bind(el: HTMLElement) {
     if (m === 'ta') loadTA();
   });
   el.querySelector('#kunit')!.addEventListener('click', (ev) => {
-    let u = (ev.target as HTMLElement).closest<HTMLElement>('[data-u]')?.dataset.u;
-    if (!u) return;
-    if (u === 'custom') {
-      const n = Number(prompt('自訂幾分鐘一根 K 棒？（2–240）', isMinute(kunit) ? kunit.slice(1) : '10'));
-      if (!(n >= 1 && n <= 240)) return;
-      u = 'm' + Math.round(n);
-    }
-    kunit = u; LS.set('stkUnit', u); applyMode();
-    if (mode === 'ta') loadTA(); else loadK();
+    const u = (ev.target as HTMLElement).closest<HTMLElement>('[data-u]')?.dataset.u;
+    if (u) setInterval2(u);
+  });
+  el.querySelector('#kunit')!.addEventListener('keydown', (ev) => {
+    const e = ev as KeyboardEvent, inp = e.target as HTMLInputElement;
+    if (inp.id !== 'kmin' || e.key !== 'Enter') return;
+    const n = Math.round(Number(inp.value));
+    if (!(n >= 1 && n <= 240)) { inp.select(); return; }
+    setInterval2('m' + n);
   });
   el.querySelector('#ktog')!.addEventListener('click', (ev) => {
     const k = (ev.target as HTMLElement).dataset.t;
@@ -732,6 +764,8 @@ export const stocksPage: Page = {
     renderGroups();
     cleanups.push(hub.on('change', () => { dirty = true; }));
     cleanups.push(hub.on('tick', onTick));
+    const liveTimer = setInterval(flushLive, 1000);
+    cleanups.push(() => clearInterval(liveTimer));
     cleanups.push(hub.on('index', onIndex));
     cleanups.push(account.on(() => { dirty = true; syncWatchSubs(); }));
     cleanups.push(store.on(() => { renderGroups(); syncWatchSubs(); dirty = true; }));
