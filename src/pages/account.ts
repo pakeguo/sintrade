@@ -7,7 +7,7 @@ import { greeks, impliedVol, price as bsPrice, yearsToExpiry } from '../bs';
 import { account, type Position } from '../core/account';
 import { hub, keyOf } from '../core/hub';
 import { type Expiry, fair, rowsOf, synthetic } from '../core/optchain';
-import { cls, esc, fin, fmt, fmtP, sign, tpeNow, tpeToday } from '../core/util';
+import { cls, esc, fin, fmt, fmtP, sign, tpeNow, tpeToday, pointerHeld } from '../core/util';
 import type { Page } from './page';
 
 const OWNER = 'account-page';
@@ -296,7 +296,7 @@ function setRange(r: string) {
 // ───────── 主迴圈 ─────────
 function frame() {
   if (!mounted) return;
-  if (dirty) {
+  if (dirty && !pointerHeld()) {
     dirty = false;
     const pcs = calcPositions();
     renderMargin(); renderGreeks(pcs); renderStkSummary(); renderFutPos(pcs); renderPayoff(pcs); renderStkPos();

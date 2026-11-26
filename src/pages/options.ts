@@ -10,8 +10,7 @@ import {
   synthetic as synthetic0,
 } from '../core/optchain';
 import {
-  $, avg, cls, compactMq, cssVar, esc, errText, fin, fmt, fmtP, fmtVol, isLive, LS, retry, session, sign, tpeToday,
-} from '../core/util';
+  $, avg, cls, compactMq, cssVar, esc, errText, fin, fmt, fmtP, fmtVol, isLive, LS, retry, session, sign, tpeToday, pointerHeld } from '../core/util';
 import type { Bar, Contract, OptContract, Tick } from '../types';
 import type { Page } from './page';
 
@@ -378,7 +377,7 @@ function renderDetail(m: Metrics) {
 let lastRecenter = 0;
 function frame() {
   const now = performance.now();
-  if (dirty) {
+  if (dirty && !pointerHeld()) {
     dirty = false;
     const m = metrics();
     renderCards(m);

@@ -3,7 +3,7 @@
 import { hub } from '../core/hub';
 import { openTA } from '../core/nav';
 import { computeMetrics, type Expiry, loadTxoExpiries, pcrLabel, type Row, rowsOf, synthetic } from '../core/optchain';
-import { cls, esc, fin, fmt, fmtP, fmtVol, isLive, LS, sign } from '../core/util';
+import { cls, esc, fin, fmt, fmtP, fmtVol, isLive, LS, sign, pointerHeld } from '../core/util';
 import { yearsToExpiry } from '../bs';
 import type { OptContract } from '../types';
 
@@ -116,7 +116,7 @@ export class TChain {
 
   private frame = () => {
     if (!this.alive) return;
-    if (this.dirty && this.cur) {
+    if (this.dirty && this.cur && !pointerHeld()) {
       this.dirty = false;
       this.render();
     }

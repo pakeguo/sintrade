@@ -19,5 +19,6 @@
 - `.env` 含 API 金鑰，永遠不可 commit、不可印出內容。
 - 修 bug 或踩到新坑時，**把根因與解法補進 `docs/ai/pitfalls.md`**。
 - 新的設計決策寫進 `docs/ai/decisions.md`。
+- 重繪迴圈（frame）一律加 `!pointerHeld()` 判斷，否則實盤時按鈕點不到（pitfalls #12）。
 - 頁面訂閱行情一律透過 `hub.acquire/release`（見 `docs/ai/README.md` 規則）。
 - 改完前端要能 `npx tsc --noEmit` 與 `npx vite build` 通過；可用 `?demo=1` 以假資料預覽。

@@ -16,7 +16,8 @@ function route() {
   const id = location.hash.replace(/^#\/?/, '').split('/')[0] || LS.get('page') || 'overview';
   const page = PAGES.find((p) => p.id === id) ?? PAGES[0];
   if (page === current) return;
-  current?.unmount();
+  // 舊頁面卸載出錯也要能切換頁籤，不然整個 App 會卡在同一頁
+  try { current?.unmount(); } catch (e) { console.error('unmount', current?.id, e); }
   current = page;
   LS.set('page', page.id);
   document.querySelectorAll<HTMLElement>('#tabs a').forEach((a) => a.classList.toggle('on', a.dataset.id === page.id));

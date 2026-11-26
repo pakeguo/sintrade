@@ -10,7 +10,7 @@ import { account } from '../core/account';
 import { hub } from '../core/hub';
 import { bollinger, regroup, rsi, sma, toDaily, volumeProfile, vwap } from '../core/indicators';
 import { store } from '../core/store';
-import { cls, compactMq, cssVar, esc, fin, fmt, fmtP, LS, sign, tpeToday } from '../core/util';
+import { cls, compactMq, cssVar, esc, fin, fmt, fmtP, LS, sign, tpeToday, pointerHeld } from '../core/util';
 import type { Bar, Contract, Info, Tick } from '../types';
 import type { Page } from './page';
 
@@ -421,7 +421,7 @@ function applyMode() {
 // ───────── 主迴圈 ─────────
 function frame() {
   if (!mounted) return;
-  if (dirty && code) {
+  if (dirty && code && !pointerHeld()) {
     dirty = false;
     renderHeader();
     renderWatch();

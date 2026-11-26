@@ -84,3 +84,15 @@ export async function retry<T>(label: string, fn: () => Promise<T>, show: (html:
     }
   }
 }
+
+// ── 按住滑鼠／手指時暫停重繪 ──
+// 即時行情每 0.2–0.5 秒重繪一次畫面；若在「按下」與「放開」之間把按鈕換掉，瀏覽器就不會觸發 click
+// （pitfalls #12）。各頁的 frame() 在 pointerHeld() 為 true 時先不重繪，放開後再補畫。
+let pressed = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', () => { pressed = true; }, true);
+  const release = () => { setTimeout(() => { pressed = false; }, 0); }; // 讓 click 先處理完
+  for (const ev of ['pointerup', 'pointercancel', 'dragend']) document.addEventListener(ev, release, true);
+  window.addEventListener('blur', release);
+}
+export const pointerHeld = () => pressed;

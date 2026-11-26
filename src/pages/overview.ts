@@ -8,7 +8,7 @@ import { account } from '../core/account';
 import { components } from '../core/components';
 import { hub } from '../core/hub';
 import { computeMetrics, type Expiry, loadTxoExpiries, pcrLabel, skewLabel } from '../core/optchain';
-import { cls, cssVar, esc, fin, fmt, session, sign, tpeToday } from '../core/util';
+import { cls, cssVar, esc, fin, fmt, session, sign, tpeToday, pointerHeld } from '../core/util';
 import { Heatmap } from '../ui/heatmap';
 import type { Bar } from '../types';
 import type { Page } from './page';
@@ -240,7 +240,7 @@ function renderAccount() {
 // ───────── 主迴圈 ─────────
 function frame() {
   if (!mounted) return;
-  if (dirty) {
+  if (dirty && !pointerHeld()) {
     dirty = false;
     renderMarket(); renderFut(); renderOpt(); renderHeavy(); renderHeat(); renderAccount();
   }

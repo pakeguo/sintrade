@@ -6,7 +6,7 @@ import { account } from '../core/account';
 import { hub, keyOf } from '../core/hub';
 import { openTA } from '../core/nav';
 import { store } from '../core/store';
-import { cls, esc, fin, fmt, fmtP, isLive, LS, sign } from '../core/util';
+import { cls, esc, fin, fmt, fmtP, isLive, LS, sign, pointerHeld } from '../core/util';
 import { TChain } from '../ui/tchain';
 import type { Contract } from '../types';
 import type { Page } from './page';
@@ -140,7 +140,7 @@ function renderGrid() {
 
 function frame() {
   if (!mounted) return;
-  if (dirty) { dirty = false; renderGrid(); }
+  if (dirty && !pointerHeld()) { dirty = false; renderGrid(); }
   for (const it of items) { const x = hub.quotes.get(keyOf(it.c)); if (x && performance.now() - x.flash < 800) { dirty = true; break; } }
   timer = setTimeout(() => requestAnimationFrame(frame), 250);
 }

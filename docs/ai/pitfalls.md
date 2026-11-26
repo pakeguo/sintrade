@@ -103,6 +103,20 @@
 - 個股頁的 `mode` 在 import 時讀 `LS.get('stkMode')`，之後 `openTA()` 改了 LS 也不會生效。
 - 會被其他頁面改動的設定，要在 `mount()` 時重新讀取。
 
+## 12. 實盤時按鈕點了沒反應（畫面會動）⚠️ 重要
+
+**現象**（2026-11-26）：接上真實行情後，畫面持續更新，但點任何按鈕、報價、小卡都沒反應。DEMO 測試時看不出來。
+
+**根因**：各頁 `frame()` 每 0.2–0.5 秒用 `innerHTML` 重繪；真實行情幾乎每次都 dirty。
+真人點擊「按下→放開」約 0.1–0.2 秒，期間按鈕被換成新元素，瀏覽器就不會觸發 `click`。
+DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到。
+
+**解法**：`core/util.ts` 的 `pointerHeld()`：pointerdown 時設為 true、pointerup 後（setTimeout 0，讓 click 先跑完）恢復。
+所有 `frame()` 在 `pointerHeld()` 時先不重繪。新增頁面或元件的重繪迴圈**一定要加這個判斷**。
+另外 `main.ts` 的 `route()` 把 `unmount()` 包在 try/catch，避免舊頁出錯卡住頁籤。
+
+**測試方式**：Playwright 用 `mouse.down()` → 等 150ms → `mouse.up()` 模擬真人點擊（腳本範例見對話紀錄 click.cjs），不要只用 `click()`。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：
