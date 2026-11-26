@@ -1,8 +1,7 @@
-// 總覽：一眼看全局（需求：docs/ai/requirements.md 第 1–5 輪）
-//   上：大盤｜台指期｜期權摘要（最近到期）
-//   中：加權＋台指期今日走勢（疊圖）
+// 總覽：一眼看全局（需求：docs/ai/requirements.md 第 1–5 輪、2026-11-26 版面調整）
+//   左上 6 卡（等寬等高）：大盤｜台指期｜期權摘要／今日損益｜期貨權益與風險｜持倉概況
+//   右上：加權＋台指期走勢疊圖（日盤／全時切換，固定錨點時間軸）
 //   下：權值股前 10｜產業類股熱力圖
-//   底：今日損益｜期貨權益與風險｜持倉概況
 import { ColorType, createChart, LineSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
 import { account } from '../core/account';
 import { components } from '../core/components';
@@ -17,14 +16,21 @@ const OWNER = 'overview';
 
 const TEMPLATE = `
 <section class="ov">
-  <div class="ov-row three">
-    <div class="card ov-card" id="ov-mkt"></div>
-    <div class="card ov-card" id="ov-fut"></div>
-    <div class="card ov-card hero" id="ov-opt"></div>
-  </div>
-  <div class="card ov-chart-card">
-    <div class="ct">今日走勢　<span class="lgd"><i class="l-ix"></i>加權指數　<i class="l-fut"></i><span id="ov-fut-name">台指期</span></span></div>
-    <div id="ov-chart" class="ov-chart"></div>
+  <div class="ov-top">
+    <div class="ov-six">
+      <div class="card ov-card" id="ov-mkt"></div>
+      <div class="card ov-card" id="ov-fut"></div>
+      <div class="card ov-card hero" id="ov-opt"></div>
+      <div class="card ov-card hero" id="ov-pnl"></div>
+      <div class="card ov-card" id="ov-margin"></div>
+      <div class="card ov-card" id="ov-pos"></div>
+    </div>
+    <div class="card ov-chart-card">
+      <div class="ct">走勢　<span class="lgd"><i class="l-ix"></i>加權　<i class="l-fut"></i><span id="ov-fut-name">台指期</span></span>
+        <span id="ov-range" class="ov-range"></span>
+        <div class="seg ov-sess" id="ov-sess"><button data-s="day">日盤</button><button data-s="full">全時</button></div></div>
+      <div id="ov-chart" class="ov-chart"></div>
+    </div>
   </div>
   <div class="ov-row two">
     <div class="card ov-card" id="ov-heavy"></div>
@@ -32,11 +38,6 @@ const TEMPLATE = `
       <span id="ov-heat-tag" class="ct-r hm-tag"></span></div>
       <div class="heat"><div id="ov-heat" class="heat-c"></div><div id="ov-heat-empty" class="muted heat-empty" hidden></div></div>
 </div>
-  </div>
-  <div class="ov-row three">
-    <div class="card ov-card hero" id="ov-pnl"></div>
-    <div class="card ov-card" id="ov-margin"></div>
-    <div class="card ov-card" id="ov-pos"></div>
   </div>
 </section>`;
 
@@ -116,6 +117,32 @@ let chart: IChartApi | null = null;
 let ixLine: ISeriesApi<'Line'> | null = null;
 let futLine: ISeriesApi<'Line'> | null = null;
 let lastIxT = 0, lastFutT = 0;
+let axisLine: ISeriesApi<'Line'> | null = null;    // 透明線：每分鐘一個空白點撐出固定時間軸（pitfalls #14）
+let rangeLo = 0, rangeHi = 0;                       // 目前時間軸的起訖（台北時間當 UTC 的秒）
+
+// ── 日盤／全時 ──
+// 日盤：08:45–13:45；全時：台灣券商期貨全盤日K起迄＝前一交易日 15:00 夜盤開盤 → 當日 13:45
+type Sess = 'day' | 'full';
+const autoSess = (): Sess => (session() === 'night' ? 'full' : 'day');
+let sess: Sess = autoSess();
+let manualSess = false;
+
+const dstr = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
+const minOf = (t: number) => { const d = new Date(t * 1000); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
+const dayStart = (date: string) => Date.parse(date + 'T00:00:00Z') / 1000;
+function shiftWeekday(date: string, dir: 1 | -1) {
+  let x = dayStart(date);
+  do { x += dir * 86400; } while ([0, 6].includes(new Date(x * 1000).getUTCDay()));
+  return dstr(x);
+}
+/** K 棒屬於哪個交易日：15:00 後的夜盤算下一個平日；週六凌晨（週五夜盤延續）算下週一 */
+function sessionDay(t: number) {
+  const d = dstr(t), m = minOf(t);
+  if (m >= 15 * 60) return shiftWeekday(d, 1);
+  if (m <= 5 * 60 && new Date(t * 1000).getUTCDay() === 6) return shiftWeekday(d, 1);
+  return d;
+}
+const isDayBar = (t: number) => { const m = minOf(t); return m >= 8 * 60 + 46 && m <= 13 * 60 + 45; };
 
 function initChart() {
   const el = document.getElementById('ov-chart')!;
@@ -127,6 +154,8 @@ function initChart() {
     timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
     crosshair: { mode: 0 },
   });
+  // 注意：visible:false 的序列不算進時間軸 → 用透明線（pitfalls #14）
+  axisLine = chart.addSeries(LineSeries, { color: 'rgba(0,0,0,0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
   ixLine = chart.addSeries(LineSeries, { color: '#c9d1d9', lineWidth: 2, title: '加權', priceLineVisible: false });
   futLine = chart.addSeries(LineSeries, { color: cssVar('--accent'), lineWidth: 2, title: '台指', priceLineVisible: false });
 }
@@ -138,20 +167,40 @@ async function loadChart() {
     hub.be.kbars(hub.fut, tpeToday(-6), tpeToday()).catch(() => [] as Bar[]),
   ]);
   if (!mounted || !chart) return;
-  const date = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
-  // 以加權指數最後一個交易日為準；期貨取同一天日盤＋接著的夜盤
-  const D = ixBars.length ? date(ixBars[ixBars.length - 1].t) : (futBars.length ? date(futBars[futBars.length - 1].t) : '');
-  const next = new Date(Date.parse(D + 'T00:00:00Z') + 86400_000).toISOString().slice(0, 10);
-  const ix = ixBars.filter((b) => date(b.t) === D);
-  const fut = futBars.filter((b) => {
-    const d = date(b.t), h = new Date(b.t * 1000).getUTCHours();
-    return (d === D) || (d === next && h < 5);
-  });
+  const axis: number[] = [];
+  let fut: Bar[], ix: Bar[], label: string;
+  if (sess === 'full') {
+    const T = futBars.length ? sessionDay(futBars[futBars.length - 1].t) : tpeToday();
+    const N = shiftWeekday(T, -1);
+    fut = futBars.filter((b) => sessionDay(b.t) === T);
+    ix = ixBars.filter((b) => dstr(b.t) === T);
+    for (let m = 15 * 60 + 1; m <= 29 * 60; m++) axis.push(dayStart(N) + m * 60);   // 前一交易日 15:01 → 隔日 05:00
+    for (let m = 8 * 60 + 46; m <= 13 * 60 + 45; m++) axis.push(dayStart(T) + m * 60); // 當日 08:46 → 13:45
+    label = `${+N.slice(5, 7)}/${+N.slice(8)} 15:00 → ${+T.slice(5, 7)}/${+T.slice(8)} 13:45`;
+  } else {
+    const days = futBars.filter((b) => isDayBar(b.t));
+    const D = days.length ? dstr(days[days.length - 1].t) : ixBars.length ? dstr(ixBars[ixBars.length - 1].t) : tpeToday();
+    fut = days.filter((b) => dstr(b.t) === D);
+    ix = ixBars.filter((b) => dstr(b.t) === D);
+    for (let m = 8 * 60 + 46; m <= 13 * 60 + 45; m++) axis.push(dayStart(D) + m * 60);
+    label = `${+D.slice(5, 7)}/${+D.slice(8)} 08:45 → 13:45`;
+  }
+  rangeLo = axis[0]; rangeHi = axis[axis.length - 1];
+  axisLine!.setData(axis.map((x) => ({ time: x as UTCTimestamp })));
   ixLine!.setData(ix.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
   futLine!.setData(fut.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
   lastIxT = ix.length ? ix[ix.length - 1].t : 0;
   lastFutT = fut.length ? fut[fut.length - 1].t : 0;
-  chart.timeScale().fitContent();
+  document.getElementById('ov-range')!.textContent = label;
+  document.querySelectorAll<HTMLElement>('#ov-sess button').forEach((b) => b.classList.toggle('on', b.dataset.s === sess));
+  // 顯示範圍＝整個時段；等版面量好寬度再設定（pitfalls #7b、#14）
+  const n = axis.length;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const el = document.getElementById('ov-chart');
+    if (!chart || !el) return;
+    chart.resize(el.clientWidth, el.clientHeight);
+    chart.timeScale().setVisibleLogicalRange({ from: -4, to: n - 1 + 4 });
+  }));
 }
 
 function bucket(t: number) { return Math.ceil(t / 60) * 60; } // shioaji 1 分 K 以結束時間標記
@@ -275,14 +324,16 @@ export const overviewPage: Page = {
     cleanups.push(hub.on('tick', (t) => {
       if (t.code !== hub.futKey || !futLine) return;
       const b = bucket(t.t);
-      if (b < lastFutT) return;
+      if (b < lastFutT || b < rangeLo || b > rangeHi) return; // 不在目前顯示的時段（例如日盤模式時的夜盤 tick）
       lastFutT = b;
       futLine.update({ time: b as UTCTimestamp, value: t.price });
     }));
     cleanups.push(hub.on('index', (i) => {
       if (i.code !== 'IX0001' || !ixLine || !i.t) return;
       const b = bucket(i.t);
-      if (b < lastIxT || !fin(i.close)) return;
+      const m = minOf(b);
+      // 加權指數只有 09:00–13:30（夜盤不畫）
+      if (b < lastIxT || b < rangeLo || b > rangeHi || m < 9 * 60 || m > 13 * 60 + 30 || !fin(i.close)) return;
       lastIxT = b;
       ixLine.update({ time: b as UTCTimestamp, value: i.close });
     }));
@@ -300,6 +351,21 @@ export const overviewPage: Page = {
     document.getElementById('ov-opt')!.addEventListener('click', () => { location.hash = '#/options'; });
     const timers = [setInterval(() => { if (nearest) hub.loadSnapshots(nearest.list); }, 10_000), setInterval(loadNearest, 10 * 60_000)];
     cleanups.push(() => timers.forEach(clearInterval));
+    // 日盤／全時切換：手動切換後本次停留以手動為準
+    document.getElementById('ov-sess')!.addEventListener('click', (ev) => {
+      const s = (ev.target as HTMLElement).closest<HTMLElement>('[data-s]')?.dataset.s as Sess | undefined;
+      if (!s || s === sess) return;
+      sess = s; manualSess = true; loadChart();
+    });
+    // 每分鐘：自動模式隨時段切換；目前時間超出時間軸（新時段開始）就重新載入
+    const st = setInterval(() => {
+      const nowS = Math.floor((Date.now() + 8 * 3600_000) / 1000);
+      if (!manualSess && autoSess() !== sess) { sess = autoSess(); loadChart(); }
+      else if (session() !== 'closed' && nowS > rangeHi + 60) loadChart();
+    }, 60_000);
+    cleanups.push(() => clearInterval(st));
+    manualSess = false;
+    sess = autoSess();
     loadNearest();
     loadChart();
     frame();
@@ -313,6 +379,6 @@ export const overviewPage: Page = {
     hub.releaseAll(OWNER);
     chart?.remove();
     heat?.destroy(); heat = null;
-    chart = null; ixLine = null; futLine = null; lastIxT = 0; lastFutT = 0;
+    chart = null; ixLine = null; futLine = null; axisLine = null; lastIxT = 0; lastFutT = 0;
   },
 };

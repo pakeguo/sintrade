@@ -149,7 +149,8 @@ export class DemoBackend implements Backend {
   async kbars(c: Contract, from?: string, to?: string): Promise<Bar[]> {
     const l = this.get(c);
     if (!l) return [];
-    if (l.c.security_type === 'STK' && from && to) return this.stockBars(l, from, to);
+    if ((l.c.security_type === 'STK' || l.c.security_type === 'IND') && from && to) return this.stockBars(l, from, to);
+    if (l.c.security_type === 'FUT' && from && to) return this.futBars(l, from, to);
     const now = tpeNow();
     const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000;
     const start = day + (8 * 60 + 46) * 60;
@@ -170,6 +171,29 @@ export class DemoBackend implements Backend {
   }
 
   /** 個股多日 1 分 K：每個平日 09:01–13:30，從現價往回隨機漫步 */
+  /** 期貨多日 1 分 K：平日日盤 08:46–13:45＋夜盤 15:01–隔日 05:00，從現價往回隨機漫步 */
+  private futBars(l: Live, start: string, end: string): Bar[] {
+    const nowS = nowSec();
+    const times: number[] = [];
+    for (let d = Date.parse(start + 'T00:00:00Z') / 1000; d <= Date.parse(end + 'T00:00:00Z') / 1000 + 86400; d += 86400) {
+      const wd = new Date(d * 1000).getUTCDay();
+      if (wd === 0 || wd === 6) continue;
+      for (let m = 8 * 60 + 46; m <= 13 * 60 + 45; m++) times.push(d + m * 60);
+      for (let m = 15 * 60 + 1; m <= 29 * 60; m++) times.push(d + m * 60); // 夜盤延續到隔日 05:00
+    }
+    const ts = times.filter((x) => x <= nowS).sort((a, b) => a - b);
+    const out: Bar[] = [];
+    let p = l.last;
+    const vol = p * 0.0004;
+    for (let i = ts.length - 1; i >= 0; i--) {
+      const o = p - (Math.random() - 0.5) * vol * 2;
+      out.push({ t: ts[i], o: Math.round(o), h: Math.round(Math.max(o, p) + Math.random() * vol), l: Math.round(Math.min(o, p) - Math.random() * vol),
+        c: Math.round(p), v: Math.floor(Math.random() ** 2 * 900) + 5 });
+      p = o;
+    }
+    return out.reverse();
+  }
+
   private stockBars(l: Live, start: string, end: string): Bar[] {
     const days: number[] = [];
     const nowS = nowSec();
