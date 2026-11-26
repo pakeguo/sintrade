@@ -54,7 +54,7 @@ src/
   ui/
     （core/session.ts：交易時段工具——交易日歸屬、期貨 N 分 K 起點；core/nav.ts：openTA() 跳分析頁、derivName() 期權簡稱）
     taview.ts        技術分析畫面：1 主（K＋量＋疊加）2 副，指標與參數存 localStorage `mw.taCfg`
-    picker.ts        報價頁搜尋列（代碼／名稱）＋「選股」視窗（類股、成交量前 50、成交值前 50），加入到自選群組
+    picker.ts        報價頁搜尋列（代碼／名稱）＋「選股」視窗（類股、成交量前 50、成交值前 50、外資買超、投信買超），加入到自選群組
     tchain.ts        精簡 T 字報價元件（結算日小卡、指標列、價平 ±N 檔）
     heatmap.ts       類股熱力圖 Canvas 渲染器（squarify 版面、緩動、粒子、光暈、tooltip；隱藏分頁自動暫停）
   api.ts             LiveBackend：HTTP + SSE
@@ -62,7 +62,7 @@ src/
   bs.ts              Black-76
   types.ts           型別與 Backend 介面
   style.css          深色主題、紅漲綠跌、頁籤、手機版面
-phone-server.mjs     轉接站：（白名單：行情＋帳務查詢；封鎖 /order/*）；/mw/store 設定同步；本機 127.0.0.1 免密碼
+phone-server.mjs     轉接站：（白名單：行情＋帳務查詢；封鎖 /order/*）；/mw/store 設定同步；/mw/inst 代抓三大法人買賣超（本機可跨站呼叫）；本機 127.0.0.1 免密碼；沒設 MW_PASSWORD 時只開放本機
                      → 建議電腦也用 http://localhost:5180 開啟，自選清單才會與手機同步
 ```
 

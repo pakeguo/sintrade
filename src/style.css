@@ -664,3 +664,5 @@ table.chain { width: 100%; border-collapse: collapse; }
 .stk-oc:hover { background: rgba(255,255,255,.07); }
 .stk-oc.on { background: rgba(245,185,74,.22); }
 .wl-groups button:disabled { opacity: .35; cursor: default; }
+.pk-note.pk-inst { padding: 8px 10px; text-align: left; font-size: 12px; }
+.pk-t th.on { color: var(--accent); }

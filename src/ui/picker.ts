@@ -1,13 +1,15 @@
-// 報價頁的股票搜尋列＋「選股」彈出視窗（類股／成交量前 50／成交值前 50）
+// 報價頁的股票搜尋列＋「選股」彈出視窗（類股／成交量前 50／成交值前 50／外資買超／投信買超）
 // 加入的對象＝自選群組（store.groups，電腦手機同步）
 import { catalog, industryName } from '../core/catalog';
 import { hub } from '../core/hub';
 import { openTA } from '../core/nav';
 import { store } from '../core/store';
 import { cls, esc, fin, fmt, fmtP, LS, sign } from '../core/util';
-import type { ScanRow } from '../types';
+import { loadInst } from '../core/inst';
+import type { Contract, ScanRow } from '../types';
 
-type Tab = 'ind' | 'vol' | 'amt';
+type Tab = 'ind' | 'vol' | 'amt' | 'fi' | 'it';
+const INST: Tab[] = ['fi', 'it'];
 
 export class Picker {
   private target: string;
@@ -121,7 +123,7 @@ export class Picker {
     m.className = 'pk-modal-bg';
     m.innerHTML = `<div class="pk-modal" role="dialog">
       <div class="pk-head"><b>選股</b>
-        <div class="seg" id="pk-tabs"><button data-t="ind">類股</button><button data-t="vol">成交量前 50</button><button data-t="amt">成交值前 50</button></div>
+        <div class="seg" id="pk-tabs"><button data-t="ind">類股</button><button data-t="vol">成交量前 50</button><button data-t="amt">成交值前 50</button><button data-t="fi">外資買超</button><button data-t="it">投信買超</button></div>
         <span class="pk-to2">加入到 <b id="pk-tname"></b></span><button class="pk-x" title="關閉（Esc）">✕</button></div>
       <div id="pk-body" class="pk-body"></div></div>`;
     document.body.append(m);
@@ -147,7 +149,8 @@ export class Picker {
     document.removeEventListener('keydown', this.onKey);
   }
 
-  private rows: { code: string; name: string; close: number; pct: number; volume: number; amount: number }[] = [];
+  private rows: { code: string; name: string; close: number; pct: number; volume: number; amount: number; foreign?: number; trust?: number }[] = [];
+  private instDate = '';
   private rowsKey = '';
 
   /** reload=true 時重新抓資料（換分頁、換類股），否則只重畫勾選狀態 */
@@ -174,6 +177,19 @@ export class Picker {
             }
             this.rows.sort((a, b) => (fin(b.amount) ? b.amount : -1) - (fin(a.amount) ? a.amount : -1));
           }
+        } else if (INST.includes(this.tab)) {
+          // 盤後資訊：最近一個有公布的交易日；不含 ETF（代號 00 開頭），依買超張數排序取前 50
+          const d = await loadInst();
+          const k = this.tab === 'fi' ? 'foreign' : 'trust';
+          const top = d.rows.filter((x) => !x.code.startsWith('00') && x[k] > 0).sort((a, b) => b[k] - a[k]).slice(0, 50);
+          this.instDate = d.date;
+          this.rows = top.map((x) => ({ code: x.code, name: x.name || catalog.get(x.code)?.name || x.code, close: NaN, pct: NaN, volume: NaN, amount: NaN,
+            foreign: x.foreign / 1000, trust: x.trust / 1000 }));
+          const snaps = await hub.be.snapshots(top.map((x): Contract => ({ security_type: 'STK', exchange: x.mkt, code: x.code }))).catch(() => []);
+          for (const s of snaps) {
+            const r = this.rows.find((x) => x.code === s.code);
+            if (r) { r.close = s.close; r.pct = (s.change_price / (s.close - s.change_price)) * 100; r.volume = s.total_volume; r.amount = s.total_amount; }
+          }
         } else {
           const r: ScanRow[] = await hub.be.scanner(this.tab === 'vol' ? 'VolumeRank' : 'AmountRank', true, 50);
           this.rows = r.map((x) => ({ code: x.code, name: x.name || catalog.get(x.code)?.name || x.code, close: x.close, pct: x.pct, volume: x.volume, amount: x.amount }));
@@ -199,6 +215,7 @@ export class Picker {
   private table() {
     if (!this.rows.length) return `<div class="muted pk-note">${this.tab === 'ind' ? (catalog.building ? '索引建立中，稍後自動出現…' : '這個類股沒有資料') : '沒有資料（非交易時段可能沒有排行）'}</div>`;
     const rank = this.tab !== 'ind';
+    if (INST.includes(this.tab)) return this.instTable();
     return `<table class="grid pk-t"><thead><tr>${rank ? '<th>#</th>' : ''}<th>股票</th><th class="r">成交</th><th class="r">漲跌幅</th>
       <th class="r">成交量</th><th class="r">成交值</th><th></th></tr></thead><tbody>
       ${this.rows.map((r, i) => `<tr data-code="${esc(r.code)}" class="${this.has(r.code) ? 'in' : ''}">
@@ -208,6 +225,24 @@ export class Picker {
         <td class="r ${cls(r.pct)}">${fin(r.pct) ? sign(r.pct, 2) + '%' : '—'}</td>
         <td class="r">${fin(r.volume) ? fmt(r.volume) : '—'}</td>
         <td class="r">${fin(r.amount) ? (r.amount / 1e8).toFixed(1) + '億' : '—'}</td>
+        <td class="r pk-add">${this.has(r.code) ? '✓ 已加入' : '＋ 加入'}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  private instTable() {
+    const [y, m, d] = this.instDate.split('-');
+    const lots = (v?: number) => (v == null || !fin(v) ? '—' : `<span class="${cls(v)}">${v > 0 ? '+' : ''}${fmt(Math.round(v))}</span>`);
+    const key = this.tab === 'fi' ? 'foreign' : 'trust';
+    return `<div class="muted pk-note pk-inst">${y ? `資料日期 ${+m}/${+d}（${+y - 1911} 年）` : ''}・盤後資訊，證交所／櫃買約 16:00 後公布・不含 ETF・依${this.tab === 'fi' ? '外資' : '投信'}買超張數排序</div>
+      <table class="grid pk-t"><thead><tr><th>#</th><th>股票</th><th class="r">成交</th><th class="r">漲跌幅</th>
+      <th class="r${key === 'foreign' ? ' on' : ''}">外資（張）</th><th class="r${key === 'trust' ? ' on' : ''}">投信（張）</th><th></th></tr></thead><tbody>
+      ${this.rows.map((r, i) => `<tr data-code="${esc(r.code)}" class="${this.has(r.code) ? 'in' : ''}">
+        <td class="muted">${i + 1}</td>
+        <td><b>${esc(r.name)}</b> <small class="muted">${esc(r.code)}</small> <button data-open class="pk-o" title="看技術分析">↗</button></td>
+        <td class="r b ${cls(r.pct)}">${fmtP(r.close)}</td>
+        <td class="r ${cls(r.pct)}">${fin(r.pct) ? sign(r.pct, 2) + '%' : '—'}</td>
+        <td class="r${key === 'foreign' ? ' b' : ''}">${lots(r.foreign)}</td>
+        <td class="r${key === 'trust' ? ' b' : ''}">${lots(r.trust)}</td>
         <td class="r pk-add">${this.has(r.code) ? '✓ 已加入' : '＋ 加入'}</td></tr>`).join('')}
       </tbody></table>`;
   }

@@ -30,10 +30,9 @@ function readDotEnv() {
   return out;
 }
 const PASSWORD = process.env.MW_PASSWORD || readDotEnv().MW_PASSWORD || '';
-if (PASSWORD.length < 6) {
-  console.error('\n✖ 請先在 .env 加一行 MW_PASSWORD=你的密碼（至少 6 個字元），再重新執行。\n');
-  process.exit(1);
-}
+// 沒設密碼 → 只開放這台電腦（127.0.0.1）使用：同步自選、代抓法人買賣超；手機連不進來
+const LOCAL_ONLY = PASSWORD.length < 6;
+if (LOCAL_ONLY) console.log('\n（.env 沒有 MW_PASSWORD：只開放這台電腦使用，手機無法連線）');
 const INDEX = join(ROOT, 'dist', 'index.html');
 if (!existsSync(INDEX)) {
   console.error('\n✖ 找不到 dist/index.html，請先執行 npm run build（或 npm run deploy）。\n');
@@ -61,6 +60,50 @@ const allowed = (method, path) =>
   // 只接受單純的路徑字元，擋掉 ../、編碼字元（%2e 等）、反斜線與 // 這類繞過白名單的寫法
   /^[A-Za-z0-9_\-/.]+$/.test(path) && !/\.\.|\/\//.test(path) &&
   ALLOW.some(([m, re]) => m === method && re.test(path));
+
+// ── 三大法人買賣超（證交所 T86＋櫃買），盤後資訊 ───────────
+// 瀏覽器不能直接抓（對方沒開 CORS），由轉接站代抓。往回找最近有資料的交易日。
+// 回傳 { date:'YYYY-MM-DD', rows:[{ code, name, mkt:'TSE'|'OTC', foreign, trust, dealer }] }（單位：股）
+const instCache = new Map(); // date -> data（有資料的日期永久快取）
+let instLatest = null;       // { at, data }
+const n = (x) => Number(String(x ?? '').replace(/,/g, '')) || 0;
+const UA = { 'User-Agent': 'Mozilla/5.0 (mywatch)', Accept: 'application/json' };
+async function getJSON(url) {
+  const r = await fetch(url, { headers: UA, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+async function instOf(date) { // date: YYYYMMDD
+  if (instCache.has(date)) return instCache.get(date);
+  const tw = await getJSON(`https://www.twse.com.tw/rwd/zh/fund/T86?date=${date}&selectType=ALLBUT0999&response=json`);
+  if (tw.stat !== 'OK' || !tw.data?.length) return null; // 假日或尚未公布
+  const rows = tw.data.map((r) => ({ code: String(r[0]).trim(), name: String(r[1]).trim(), mkt: 'TSE',
+    foreign: n(r[4]) + n(r[7]), trust: n(r[10]), dealer: n(r[11]) }));
+  try {
+    const d = `${date.slice(0, 4)}/${date.slice(4, 6)}/${date.slice(6)}`;
+    const tp = await getJSON(`https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date=${encodeURIComponent(d)}&response=json`);
+    for (const r of tp.tables?.[0]?.data ?? []) {
+      rows.push({ code: String(r[0]).trim(), name: String(r[1]).trim(), mkt: 'OTC', foreign: n(r[10]), trust: n(r[13]), dealer: n(r[22]) });
+    }
+  } catch (e) { console.log('[法人] 櫃買抓取失敗', e.message); }
+  const data = { date: `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}`, rows };
+  instCache.set(date, data);
+  return data;
+}
+async function instLatestData() {
+  if (instLatest && Date.now() - instLatest.at < 10 * 60_000) return instLatest.data;
+  const now = new Date(Date.now() + 8 * 3600_000);
+  for (let i = 0; i < 10; i++) {
+    const d = new Date(now.getTime() - i * 86400_000);
+    if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
+    const data = await instOf(d.toISOString().slice(0, 10).replace(/-/g, ''));
+    if (data) { instLatest = { at: Date.now(), data }; return data; }
+    await new Promise((r) => setTimeout(r, 400)); // 證交所有頻率限制
+  }
+  throw new Error('最近 10 天都查不到三大法人資料');
+}
+// 從 shioaji server（127.0.0.1:8080/apps/mywatch/）開啟的頁面也能呼叫：只允許本機來源跨站讀取
+const localOrigin = (o) => /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(o || '');
 
 // ── 小工具 ──────────────────────────────────────────────
 function safeEq(a, b) {
@@ -161,6 +204,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 三大法人買賣超（唯讀、只給本機）
+  if (path === '/mw/inst' && isLocal(ip)) {
+    const cors = localOrigin(req.headers.origin) ? { 'Access-Control-Allow-Origin': req.headers.origin, Vary: 'Origin' } : {};
+    if (req.method === 'OPTIONS') return send(res, 204, '', 'text/plain', { ...cors, 'Access-Control-Allow-Methods': 'GET' });
+    instLatestData()
+      .then((d) => send(res, 200, JSON.stringify(d), 'application/json', cors))
+      .catch((e) => send(res, 502, JSON.stringify({ message: '抓取證交所／櫃買資料失敗：' + e.message }), 'application/json', cors));
+    return;
+  }
+
+  // 沒設密碼時只服務本機
+  if (LOCAL_ONLY && !isLocal(ip)) return send(res, 403, '只開放這台電腦使用（.env 沒有設定 MW_PASSWORD）', 'text/plain; charset=utf-8');
+
   // 從電腦本機開啟免密碼；手機（區網、Tailscale）需要密碼
   if (!isLocal(ip) && !authed(req)) {
     if (path.startsWith('/api/')) return send(res, 401, '{"message":"unauthorized"}', 'application/json');
@@ -202,11 +258,11 @@ const server = http.createServer((req, res) => {
 server.requestTimeout = 0; // SSE 串流需要長連線
 server.headersTimeout = 30_000;
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, LOCAL_ONLY ? '127.0.0.1' : '0.0.0.0', () => {
   const ips = Object.entries(networkInterfaces()).flatMap(([name, list]) =>
     (list || []).filter((i) => i.family === 'IPv4' && !i.internal).map((i) => ({ name, ip: i.address })));
   console.log('\n📱 手機看盤轉接站已啟動（開放看盤與帳務查詢，下單已封鎖）\n');
-  for (const { name, ip } of ips) {
+  for (const { name, ip } of LOCAL_ONLY ? [] : ips) {
     const tag = ip.startsWith('100.') ? '（Tailscale，出門在外用這個）' : '（同一個 Wi-Fi 用這個）';
     console.log(`   http://${ip}:${PORT}   ${tag}  [${name}]`);
   }
