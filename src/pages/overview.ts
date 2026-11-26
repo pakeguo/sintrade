@@ -30,7 +30,8 @@ const TEMPLATE = `
     <div class="card ov-card" id="ov-heavy"></div>
     <div class="card ov-card"><div class="ct">產業類股熱力圖<span class="tip" title="方塊大小＝權重、顏色＝類股加權漲跌幅、數字＝對大盤的貢獻點數。光點密度＝每秒成交金額（資金流量）；往上紅點＝正在推升指數，往下綠點＝正在拖累">?</span>
       <span id="ov-heat-tag" class="ct-r hm-tag"></span></div>
-      <div class="heat"><div id="ov-heat" class="heat-c"></div><div id="ov-heat-empty" class="muted heat-empty" hidden></div></div></div>
+      <div class="heat"><div id="ov-heat" class="heat-c"></div><div id="ov-heat-empty" class="muted heat-empty" hidden></div></div>
+      <div id="ov-heat-diag" class="heat-diag"></div></div>
   </div>
   <div class="ov-row three">
     <div class="card ov-card hero" id="ov-pnl"></div>
@@ -190,6 +191,14 @@ function renderHeat() {
   empty.hidden = st.list.length > 0;
   empty.textContent = session() === 'day' ? '載入中…' : '盤後尚無收盤資料：今天盤中開過總覽後，盤後就會顯示收盤值';
   heat?.setData(st.list, st.live);
+  // 診斷列（之後確認正常可移除）
+  const d = components.diag;
+  const n = (m: string) => d.recv[`group_metric/${m}`] ?? 0;
+  const ago = d.lastAt ? `${Math.round((Date.now() - d.lastAt) / 1000)} 秒前` : '尚未收到';
+  const others = Object.entries(d.recv).filter(([k]) => !k.startsWith('group_metric/') && !k.startsWith('ranking/')).map(([k, v]) => `${k}=${v}`).join(' ');
+  document.getElementById('ov-heat-diag')!.textContent =
+    `類股串流：貢獻 ${n('contribution')}・權重 ${n('weight')}・漲跌 ${n('weighted_performance')}・金額 ${n('amount')} 筆｜試撮 ${d.simtrade}｜最後收到 ${ago}｜類股 ${st.list.length} 個`
+    + (others ? `｜其他 ${others}` : '') + (d.errors.length ? `｜訂閱錯誤：${d.errors.join('；')}` : '');
 }
 
 // ───────── 帳戶 ─────────

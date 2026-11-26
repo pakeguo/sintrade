@@ -96,7 +96,8 @@ class Hub {
         this.emit('change', undefined);
       },
       status: (s) => { this.status = s; this.emit('status', s); },
-      components: (u) => { if (!u.simtrade) { this.emit('components', u); this.emit('change', undefined); } },
+      // 試撮資料也送出（由 components 自行略過並計數，方便診斷）
+      components: (u) => { this.emit('components', u); if (!u.simtrade) this.emit('change', undefined); },
     });
 
     // 加權指數：全程訂閱（每一頁的上方都會用到）

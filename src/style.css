@@ -122,6 +122,7 @@ table.hv { width: 100%; border-collapse: collapse; margin-top: 4px; }
   box-shadow: 0 0 0 0 rgba(34,176,125,.7); animation: pulse 1.6s infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(34,176,125,.6); } 70% { box-shadow: 0 0 0 7px rgba(34,176,125,0); } 100% { box-shadow: 0 0 0 0 rgba(34,176,125,0); } }
 .heat-empty[hidden] { display: none; }
+.heat-diag { color: var(--muted); font-size: 11px; margin-top: 4px; opacity: .75; word-break: break-all; }
 .heat-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; text-align: center; }
 .hc-unused { position: absolute; box-sizing: border-box; border: 1px solid var(--panel); padding: 4px 6px; overflow: hidden;
   display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: #fff; }

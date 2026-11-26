@@ -50,7 +50,12 @@ class Components {
     this.users.add(owner);
     if (this.users.size > 1) return;
     this.off = hub.on('components', (u) => this.onUpdate(u));
-    for (const p of ALL) hub.be.subscribeComponents(p).catch((e) => console.warn('components', e));
+    for (const p of ALL) {
+      hub.be.subscribeComponents(p).catch((e) => {
+        console.warn('components subscribe', p, e);
+        this.diag.errors.push(`${p.kind}/${p.metric}: ${String((e as Error)?.message ?? e).slice(0, 80)}`);
+      });
+    }
     this.refreshTop();
   }
   unuse(owner: string) {
@@ -60,8 +65,19 @@ class Components {
     hub.releaseAll('components');
   }
 
+  /** 診斷用：各串流收到幾筆、試撮筆數、訂閱錯誤、最後收到時間 */
+  readonly diag = { recv: {} as Record<string, number>, simtrade: 0, errors: [] as string[], lastAt: 0, logged: new Set<string>() };
+
   private onUpdate(u: import('../types').ComponentsUpdate) {
-    const p = u.projection;
+    const p = (u.projection ?? {}) as ComponentsProjection;
+    const key = `${p.kind ?? '?'}/${p.metric ?? '?'}`;
+    if (!this.diag.logged.has(key)) {
+      this.diag.logged.add(key);
+      console.info('[類股串流] 第一筆', key, JSON.parse(JSON.stringify(u)));
+    }
+    if (u.simtrade) { this.diag.simtrade++; return; }
+    this.diag.recv[key] = (this.diag.recv[key] ?? 0) + 1;
+    this.diag.lastAt = Date.now();
     if (u.entries) {
       let changed = false;
       for (const e of u.entries) {
@@ -73,7 +89,8 @@ class Components {
       }
       if (changed) { this.refreshTop(); this.save(); }
     }
-    if (u.groups && p.kind === 'group_metric') {
+    // 有 groups 就當作類股資料（不依賴 projection.kind 的確切寫法）
+    if (u.groups && p.kind !== 'ranking') {
       const now = performance.now();
       for (const g of u.groups) {
         let s = this.sectors.get(g.category) as (Sector & { _at?: number; _c?: number; _a?: number }) | undefined;
