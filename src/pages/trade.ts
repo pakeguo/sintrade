@@ -3,7 +3,8 @@
 // ⚠ 目前只做「模擬委託」（core/simorder.ts），程式內沒有任何送單功能；所有對外連線另有防堵（core/guard.ts）。
 //
 //   上：個股資訊｜庫存狀況（成交均價、持有股數、當沖損益兩平價、未實現損益）｜損益試算（買賣五檔平倉損益）
-//   左：條件（現股／現股當沖／零股）、數量、ROD/IOC → 價位階梯（雙擊左半買進、右半賣出；點自己的委託數量＝刪單）→ 委託回報
+//   左：條件（現股／現股當沖／零股）、數量、ROD/IOC → 手動下單（輸入價格／數量／ROD・IOC／送出）、市價買進／賣出（數量＝閃電設定）
+//       → 價位階梯（雙擊左半買進、右半賣出；單擊價格＝帶入手動價格；點自己的委託數量＝刪單）→ 委託回報
 //   右：盤中走勢（09:00–13:30）｜大單統計＋累計淨買｜分價明細｜逐筆成交
 import {
   ColorType, createChart, HistogramSeries, LineSeries, LineStyle,
@@ -43,9 +44,16 @@ const TEMPLATE = `
       </div>
       <div class="td-ctl2"><span class="muted">數量</span><span id="td-quick"></span>
         <button id="td-center" title="回到成交價">⊙ 置中</button><button id="td-cxl" title="刪除這檔全部掛單">全部刪單</button></div>
+      <div class="td-man">
+        <label class="td-mf">價格<input id="td-mp" type="number" step="any" placeholder="點階梯價格帶入"></label>
+        <label class="td-mf"><input id="td-mq" type="number" min="1" value="1"><span class="td-munit">張</span></label>
+        <select id="td-mtif" title="委託條件"><option value="ROD">ROD</option><option value="IOC">IOC</option></select>
+        <button class="td-mb" data-m="B">買進送出</button><button class="td-ms" data-m="S">賣出送出</button>
+      </div>
+      <div class="td-mkt"><button class="td-mb" data-k="B">市價買進 <small class="td-mkq"></small></button><button class="td-ms" data-k="S">市價賣出 <small class="td-mkq"></small></button></div>
       <div class="td-lh"><span>委買</span><span>買進量</span><span>價格</span><span>賣出量</span><span>委賣</span></div>
       <div id="td-ladder" class="td-ladder"></div>
-      <div id="td-msg" class="td-msg">雙擊左半＝買進、右半＝賣出；點自己的委託數量＝刪單；滾輪上下移動</div>
+      <div id="td-msg" class="td-msg">雙擊左半＝買進、右半＝賣出；單擊價格＝帶入手動價格；點自己的委託數量＝刪單</div>
       <div class="td-oh"><b>委託回報</b><span class="muted">（模擬）</span><button id="td-clear" class="td-clear" title="清除今天全部模擬紀錄">清除</button></div>
       <div id="td-orders" class="td-orders"></div>
     </div>
@@ -179,7 +187,7 @@ const qtyShares = () => {
 
 function ladderPrices(): number[] {
   const el = document.getElementById('td-ladder')!;
-  const rows = Math.max(9, Math.floor((el.clientHeight || 500) / 22));
+  const rows = Math.max(9, Math.floor((el.clientHeight || 500) / 20));
   const last = q()?.last ?? info?.reference ?? NaN;
   if (!fin(last)) return [];
   if (!fin(center) || (follow && (last > center + tickRange(rows / 2 - 2) || last < center - tickRange(rows / 2 - 2)))) center = snap(last, etf());
@@ -224,13 +232,26 @@ function msg(text: string, kind: '' | 'ok' | 'err' = '') {
   if (el) { el.textContent = text; el.className = `td-msg ${kind}`; }
 }
 
-/** 雙擊價位＝送出模擬委託（只記錄在瀏覽器，不會連線下單） */
-function place(side: Side, price: number) {
+/** 手動下單的數量（張或股，依條件） */
+const manualShares = () => {
+  const n = Math.round(Number((document.getElementById('td-mq') as HTMLInputElement | null)?.value));
+  return n > 0 ? (cond === 'odd' ? n : n * 1000) : NaN;
+};
+
+/**
+ * 送出模擬委託（只記錄在瀏覽器，不會連線下單）：閃電下單雙擊、手動下單、市價買賣共用
+ * 市價：以漲停（買）／跌停（賣）為限價、IOC，能成交的部分以對手價成交
+ */
+function place(side: Side, price: number, opt: { qty?: number; tif?: Tif; mkt?: boolean; src?: string } = {}) {
   const x = q();
-  const qty = qtyShares();
+  const qty = opt.qty ?? qtyShares();
+  const t: Tif = opt.mkt ? 'IOC' : opt.tif ?? tif;
   const p = curPos();
   let reject = '';
   if (!contract) reject = '尚未載入商品';
+  else if (!fin(qty) || qty <= 0) reject = '請輸入數量';
+  else if (!fin(price) || price <= 0) reject = '請輸入價格';
+  else if (!opt.mkt && Math.abs(snap(price, etf()) - price) > 1e-6) reject = `價格不符合升降單位（最接近 ${fmtP(snap(price, etf()))}）`;
   else if (cond === 'odd' && (qty < 1 || qty > 999)) reject = '零股數量 1–999 股';
   else if (cond !== 'odd' && qty > 499_000) reject = '單筆最多 499 張';
   else if (info && (price > info.limit_up + 1e-6 || price < info.limit_down - 1e-6)) reject = '超出漲跌停';
@@ -238,10 +259,13 @@ function place(side: Side, price: number) {
     const pending = simBook.working(code).filter((o) => o.side === 'S').reduce((s, o) => s + o.qty - o.filled, 0);
     if (qty + pending > Math.max(0, p.qty)) reject = `${COND_NAME[cond]}賣出超過庫存（可賣 ${fmt(Math.max(0, p.qty - pending))} 股），先賣後買請用「現股當沖」`;
   }
-  const o = simBook.place({ code, side, price, qty, cond, tif }, { bid: x?.bids[0]?.[0] ?? NaN, ask: x?.asks[0]?.[0] ?? NaN, last: x?.last ?? NaN }, reject || undefined);
-  const what = `${side === 'B' ? '買進' : '賣出'} ${esc(nameOf(code))} ${cond === 'odd' ? fmt(qty) + ' 股' : fmt(qty / 1000) + ' 張'} @${fmtP(price)}`;
+  const o = simBook.place({ code, side, price, qty, cond, tif: t, mkt: opt.mkt },
+    { bid: x?.bids[0]?.[0] ?? NaN, ask: x?.asks[0]?.[0] ?? NaN, last: x?.last ?? NaN }, reject || undefined);
+  if (opt.mkt && o.status === 'cancelled') o.note = '市價無對手價可成交';
+  const fillPx = o.filled ? o.fills.reduce((s, f) => s + f.price * f.qty, 0) / o.filled : NaN;
+  const what = `${side === 'B' ? '買進' : '賣出'} ${esc(nameOf(code))} ${cond === 'odd' ? fmt(qty) + ' 股' : fmt(qty / 1000) + ' 張'} @${opt.mkt ? '市價' : fmtP(price)}`;
   if (o.status === 'rejected') msg(`✖ 模擬委託失敗：${o.note}`, 'err');
-  else msg(`✓ 模擬${COND_NAME[cond]}${what}（${o.status === 'filled' ? '已成交' : o.status === 'cancelled' ? o.note : `${tif} 掛單中`}）`, 'ok');
+  else msg(`✓ ${opt.src ?? ''}模擬${COND_NAME[cond]}${what}（${o.status === 'filled' ? `已成交${opt.mkt ? ' ' + fmtP(fillPx) : ''}` : o.status === 'cancelled' ? o.note : `${t} 掛單中`}）`, 'ok');
   dirty = true;
 }
 
@@ -253,7 +277,7 @@ function renderOrders() {
     const avg = o.fills.length ? o.fills.reduce((s, f) => s + f.price * f.qty, 0) / o.filled : NaN;
     const u = o.cond === 'odd' ? 1 : 1000;
     return `<tr class="td-o-${o.status}"><td class="muted">${t}</td><td class="${o.side === 'B' ? 'up' : 'down'}">${o.side === 'B' ? '買' : '賣'}</td>
-      <td>${COND_NAME[o.cond]}</td><td class="r">${fmtP(o.price)}</td><td class="r">${fmt(o.filled / u)}/${fmt(o.qty / u)}${o.cond === 'odd' ? '股' : '張'}</td>
+      <td>${COND_NAME[o.cond]}</td><td class="r">${o.mkt ? '市價' : fmtP(o.price)}</td><td class="r">${fmt(o.filled / u)}/${fmt(o.qty / u)}${o.cond === 'odd' ? '股' : '張'}</td>
       <td class="r">${fin(avg) ? fmtP(avg) : ''}</td><td>${st[o.status]}${o.note ? `<small class="muted"> ${esc(o.note)}</small>` : ''}</td>
       <td>${o.status === 'working' ? `<button data-cxl="${o.id}">刪單</button>` : ''}</td></tr>`;
   }).join('')}</tbody></table>` : '<div class="muted td-empty">今天還沒有模擬委託</div>';
@@ -406,10 +430,19 @@ function applyCtl() {
   document.querySelectorAll<HTMLElement>('#td-cond button').forEach((b) => b.classList.toggle('on', b.dataset.c === cond));
   document.querySelectorAll<HTMLElement>('#td-tif button').forEach((b) => b.classList.toggle('on', b.dataset.t === tif));
   document.getElementById('td-unit')!.textContent = cond === 'odd' ? '股' : '張';
+  document.querySelector('.td-munit')!.textContent = cond === 'odd' ? '股' : '張';
+  (document.getElementById('td-mq') as HTMLInputElement).max = cond === 'odd' ? '999' : '499';
+  mktLabel();
   const presets = cond === 'odd' ? [1, 10, 50, 100, 500] : [1, 2, 5, 10, 20];
   document.getElementById('td-quick')!.innerHTML = presets.map((n) => `<button data-n="${n}">${n}</button>`).join('');
   const inp = document.getElementById('td-n') as HTMLInputElement;
   inp.max = cond === 'odd' ? '999' : '499';
+}
+
+/** 市價按鈕上顯示數量（＝閃電下單設定） */
+function mktLabel() {
+  const n = qtyShares();
+  document.querySelectorAll('.td-mkq').forEach((e) => { e.textContent = cond === 'odd' ? `${fmt(n)} 股` : `${fmt(n / 1000)} 張`; });
 }
 
 function frame() {
@@ -460,7 +493,22 @@ function bind(el: HTMLElement) {
     const n = (e.target as HTMLElement).dataset.n;
     if (n) { (el.querySelector('#td-n') as HTMLInputElement).value = n; dirty = true; }
   });
-  el.querySelector('#td-n')!.addEventListener('input', () => { dirty = true; });
+  el.querySelector('#td-n')!.addEventListener('input', () => { dirty = true; mktLabel(); });
+  // 手動下單：輸入價格／數量／ROD・IOC → 送出
+  el.querySelector('.td-man')!.addEventListener('click', (e) => {
+    const side = (e.target as HTMLElement).closest<HTMLElement>('[data-m]')?.dataset.m as Side | undefined;
+    if (!side) return;
+    const price = Number((el.querySelector('#td-mp') as HTMLInputElement).value);
+    place(side, price, { qty: manualShares(), tif: (el.querySelector('#td-mtif') as HTMLSelectElement).value as Tif, src: '手動 ' });
+  });
+  // 市價買進／賣出：數量＝閃電下單設定
+  el.querySelector('.td-mkt')!.addEventListener('click', (e) => {
+    const side = (e.target as HTMLElement).closest<HTMLElement>('[data-k]')?.dataset.k as Side | undefined;
+    if (!side) return;
+    const x = q();
+    const px = side === 'B' ? info?.limit_up ?? x?.asks[0]?.[0] ?? NaN : info?.limit_down ?? x?.bids[0]?.[0] ?? NaN;
+    place(side, px, { mkt: true });
+  });
   el.querySelector('#td-center')!.addEventListener('click', () => { center = NaN; follow = true; dirty = true; });
   el.querySelector('#td-cxl')!.addEventListener('click', () => { simBook.cancelAll(code); msg('已刪除這檔全部模擬掛單', 'ok'); });
   el.querySelector('#td-clear')!.addEventListener('click', () => { if (confirm('清除今天全部模擬委託與成交紀錄？')) simBook.clear(); });
@@ -474,6 +522,11 @@ function bind(el: HTMLElement) {
     const t = e.target as HTMLElement;
     holdRender = performance.now() + 450;
     const cx = t.closest<HTMLElement>('[data-cxl]')?.dataset.cxl;
+    if (t.closest('.td-p')) {                                   // 單擊價格＝帶入手動下單價格
+      const pp = Number(t.closest<HTMLElement>('[data-p]')?.dataset.p);
+      if (fin(pp)) { (document.getElementById('td-mp') as HTMLInputElement).value = String(pp); msg(`手動價格已帶入 ${fmtP(pp)}`); }
+      return;
+    }
     if (cx) { cx.split(',').forEach((id) => simBook.cancel(Number(id))); msg('已刪除該價位的模擬掛單', 'ok'); lastClick = { at: 0, key: '' }; return; }
     const act = t.closest<HTMLElement>('[data-act]')?.dataset.act as Side | undefined;
     const p = Number(t.closest<HTMLElement>('[data-p]')?.dataset.p);

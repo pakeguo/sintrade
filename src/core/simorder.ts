@@ -17,6 +17,7 @@ export interface SimFill { at: number; price: number; qty: number }
 export interface SimOrder {
   id: number; code: string; side: Side; price: number; qty: number; filled: number; cond: Cond; tif: Tif;
   status: 'working' | 'filled' | 'cancelled' | 'rejected'; at: number; fills: SimFill[]; note?: string;
+  mkt?: boolean; // 市價單（以漲跌停價為限價、IOC，立即以對手價成交）
 }
 
 /** 費用：手續費以折後費率（2.2 折）估算，證交稅賣出時收 */

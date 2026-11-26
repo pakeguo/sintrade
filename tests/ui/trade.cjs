@@ -51,6 +51,28 @@ async function dbl(p, sel) {
   await p.click('#td-cond button[data-c="cash"]'); await p.fill('#td-n', '50');
   await dbl(p, '.td-row:nth-child(3) .td-av'); await p.waitForTimeout(600);
   res.oversell = await p.$eval('#td-msg', (e) => e.textContent);
+  // 手動下單：點階梯最下面的價格帶入 → 輸入 2 張 → ROD 買進送出 → 階梯上要出現自己的委買
+  await p.click('#td-cond button[data-c="dt"]');
+  const lastRow = await p.$$eval('.td-row', (e) => e.length);
+  await p.click(`.td-row:nth-child(${lastRow}) .td-p`); await p.waitForTimeout(300);
+  res.manualPrice = await p.$eval('#td-mp', (e) => e.value);
+  await p.fill('#td-mq', '2');
+  await p.click('.td-man button[data-m="B"]'); await p.waitForTimeout(800);
+  res.manualMsg = await p.$eval('#td-msg', (e) => e.textContent);
+  res.manualOnLadder = await p.$$eval('.td-my.b em', (e) => e.map((x) => x.textContent));
+  res.manualInOrders = await p.$$eval('#td-orders tr.td-o-working', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ')).filter((t) => /2\/2|0\/2/.test(t)));
+  // 價格不符升降單位要擋
+  await p.fill('#td-mp', '1451.3'); await p.click('.td-man button[data-m="B"]'); await p.waitForTimeout(500);
+  res.badTick = await p.$eval('#td-msg', (e) => e.textContent);
+  // 市價買進／賣出（數量＝閃電設定）
+  await p.fill('#td-n', '3'); await p.dispatchEvent('#td-n', 'input'); await p.waitForTimeout(300);
+  res.mktLabel = await p.$eval('.td-mkt button[data-k="B"]', (e) => e.textContent.trim());
+  await p.click('.td-mkt button[data-k="B"]'); await p.waitForTimeout(800);
+  res.mktBuy = await p.$eval('#td-msg', (e) => e.textContent);
+  await p.click('.td-mkt button[data-k="S"]'); await p.waitForTimeout(800);
+  res.mktSell = await p.$eval('#td-msg', (e) => e.textContent);
+  res.width = await p.evaluate(() => [document.querySelector('.td-info').getBoundingClientRect(), document.querySelector('.td-lcard').getBoundingClientRect()]
+    .map((r) => `${Math.round(r.x)}+${Math.round(r.width)}`));
   res.layout = await p.evaluate(() => ({ pageH: document.documentElement.scrollHeight, ladderRows: document.querySelectorAll('.td-row').length }));
   await p.screenshot({ path: 'trade-1920x912.png' });
   res.orderRequestsSeenOnNetwork = orderReqs;
@@ -61,6 +83,10 @@ async function dbl(p, sel) {
   if (orderReqs.length) fail.push('network');
   if (res.orders < 1 || res.working < 1 || res.cancelled < 1) fail.push('sim');
   if (res.layout.pageH > 912) fail.push('layout');
+  if (!res.manualInOrders.length || !/掛單中/.test(res.manualMsg)) fail.push('manual');
+  if (!/升降單位/.test(res.badTick)) fail.push('tick');
+  if (!/市價.*已成交/.test(res.mktBuy) || !/市價.*已成交/.test(res.mktSell)) fail.push('market');
+  if (res.width[0] !== res.width[1]) fail.push('width');
   console.log(fail.length ? '✖ FAIL ' + fail.join(',') : '✓ PASS');
   if (fail.length) process.exitCode = 1;
   await b.close();
