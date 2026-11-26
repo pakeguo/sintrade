@@ -40,7 +40,7 @@ const TEMPLATE = `
       <div class="lv-side">
         <div class="card"><div class="ct">五檔</div><div id="sbook" class="book"></div></div>
         <div class="card"><div class="ct">內外盤<span class="tip" title="外盤：買方主動吃賣單成交；內盤：賣方主動砸買單成交">?</span></div><div id="inout"></div></div>
-        <div class="card"><div class="ct">大單統計<span class="tip" title="依單筆成交金額推估：散戶 <100 萬、中實戶 ≥100 萬、大戶 ≥500 萬、法人級 ≥2,000 萬。逐筆成交是匿名的，無法真正分辨身分；淨買＝外盤（主動買）−內盤（主動賣）">?</span></div><div id="big"></div>
+        <div class="card"><div class="ct">大單統計<span class="tip" title="依單筆成交金額推估：散戶 <100萬或≤2張、中實戶 ≥100萬且≥3張、大戶 ≥500萬且≥10張、法人級 ≥2,000萬且≥50張（金額與張數都達標才算）。逐筆成交是匿名的，無法真正分辨身分；淨買＝外盤（主動買）−內盤（主動賣）">?</span></div><div id="big"></div>
           <div class="flow-head"><span>累計淨買</span><span id="flow-lgd" class="flow-lgd"></span></div>
           <div class="flowchart"><div id="flowchart" class="fc-in"></div></div></div>
       </div>
@@ -419,7 +419,13 @@ function renderBook() {
   document.getElementById('sbook')!.innerHTML = h;
 }
 
-const tierOf = (amt: number) => { const [a, b, c] = store.data.bigTiers; return amt >= c ? 3 : amt >= b ? 2 : amt >= a ? 1 : 0; };
+/** 混合分級：金額與張數都達標才算該級（低等級因此較寬）。
+ *  預設：散戶 <100萬或≤2張、中實戶 ≥100萬且≥3張、大戶 ≥500萬且≥10張、法人級 ≥2,000萬且≥50張 */
+const tierOf = (amt: number, lots: number) => {
+  const [a, b, c] = store.data.bigTiers;
+  const [la, lb, lc] = store.data.bigLots ?? [3, 10, 50];
+  return amt >= c && lots >= lc ? 3 : amt >= b && lots >= lb ? 2 : amt >= a && lots >= la ? 1 : 0;
+};
 const TIER = ['散戶', '中實戶', '大戶', '法人級'];
 const TIER_COLOR = ['#8b95a3', '#8fb3ff', '#f5b94a', '#d17cff'];
 const wan = (n: number) => (Math.abs(n) >= 1e8 ? (n / 1e8).toFixed(2) + '億' : Math.round(n / 1e4).toLocaleString() + '萬');
@@ -429,7 +435,7 @@ function renderFlow() {
   const buy = [0, 0, 0, 0], sell = [0, 0, 0, 0], cnt = [0, 0, 0, 0];
   for (const t of ticks) {
     const amt = t.price * t.vol * 1000;
-    const k = tierOf(amt);
+    const k = tierOf(amt, t.vol);
     if (t.side === 1) { outV += t.vol; buy[k] += amt; } else if (t.side === 2) { inV += t.vol; sell[k] += amt; }
     cnt[k]++;
   }
@@ -459,7 +465,8 @@ function initFlowChart() {
   const el = document.getElementById('flowchart')!;
   fchart = createChart(el, {
     ...chartOpts(),
-    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 10 },
+    // 小圖不放 TradingView 標誌（會壓住線）；同頁的分時主圖保留標誌作為出處標示
+    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 10, attributionLogo: false },
     timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 0 },
     rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.1 } },
     localization: { priceFormatter: fmtMoney },
@@ -504,7 +511,7 @@ function renderFlowChart() {
     const b = Math.ceil(tk.t / 60) * 60;
     if (b !== cur) { if (cur) flush(); cur = b; }
     const amt = tk.price * tk.vol * 1000;
-    const k = tierOf(amt);
+    const k = tierOf(amt, tk.vol);
     if (tk.side === 1) cum[k] += amt; else if (tk.side === 2) cum[k] -= amt;
   }
   if (cur) flush();
@@ -518,7 +525,7 @@ function renderTicks() {
   const out: string[] = [];
   for (let i = ticks.length - 1; i >= 0 && out.length < 120; i--) {
     const t = ticks[i];
-    const amt = t.price * t.vol * 1000, k = tierOf(amt);
+    const amt = t.price * t.vol * 1000, k = tierOf(amt, t.vol);
     if (onlyBig && k < 2) continue;
     const time = new Date(t.t * 1000).toISOString().slice(11, 19);
     out.push(`<div class="tk-r${k ? ' big' + k : ''}"><span class="tm">${time}</span>

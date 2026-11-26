@@ -254,6 +254,17 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 /* 逐筆清單不參與撐高：絕對定位鋪在卡片內 → 整列高度只由走勢圖決定，資料多時在框內捲動
    （flex:1 + height:0 擋不住內容撐高 grid 列，實測整列被撐到 3000px） */
 @media (min-width: 1401px) {
+  /* 盤中三欄高度＝視窗剩餘高度（扣掉頁首、個股資訊列、工具列），1920×1080 瀏覽器不需要捲動 */
+  .live { height: calc(100vh - 208px); min-height: 540px; grid-template-rows: minmax(0, 1fr); }
+  .lv-chart .ichart { flex: 1 1 0; height: auto; min-height: 0; }
+  .lv-side { min-height: 0; gap: 8px; }
+  .lv-side .card { padding: 7px 12px; }
+  .lv-side .lv .v { height: 16px; line-height: 16px; }
+  .lv-side .lvsum { margin-top: 3px; }
+  .bigt td, .bigt th { padding: 3px 4px; }
+  .big-sum { margin-top: 3px; }
+  .flow-head { margin-top: 5px; padding-top: 4px; }
+  .flowchart { min-height: 80px; }
   .lv-ticks { position: relative; min-height: 0; }
   .ticks { position: absolute; left: 12px; right: 12px; top: 38px; bottom: 10px; margin: 0; }
 }

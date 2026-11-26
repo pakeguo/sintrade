@@ -73,4 +73,5 @@ phone-server.mjs     轉接站（白名單：行情＋帳務查詢；封鎖 /ord
 - API Key 權限：行情／資料、帳務、正式環境；綁定 IP；**無交易權限**。
 - 2026-11-18 換了新 API Key（加入證券帳戶授權）。換 Key 後要清 token 快取（pitfalls #7）。
 - 使用正式環境（`SJ_PRODUCTION=true`）。
+- 螢幕 1920×1080，Chrome 有書籤列，網頁可視範圍約 **1920×912**：版面以此為準測試（Playwright viewport 1920×912）。
 - GitHub repo：`pakeguo/sintrade`（private）。

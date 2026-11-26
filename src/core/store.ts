@@ -7,11 +7,13 @@ export interface WatchGroup { id: string; name: string; codes: string[] }
 export interface StoreData {
   groups: WatchGroup[];
   bigTiers: [number, number, number]; // 大單門檻（元）：中實戶、大戶、法人級
+  bigLots: [number, number, number];  // 大單門檻（張）：中實戶、大戶、法人級（金額與張數都要達標，見 decisions.md）
 }
 
 const DEFAULTS: StoreData = {
   groups: [{ id: 'g1', name: '自選', codes: ['2330', '2317', '2454'] }],
   bigTiers: [1_000_000, 5_000_000, 20_000_000],
+  bigLots: [3, 10, 50],
 };
 
 class Store {
