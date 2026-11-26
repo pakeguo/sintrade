@@ -3,6 +3,12 @@ import './style.css';
 import { installOrderGuard } from './core/guard';
 // 下單絕對防堵：最先執行，之後任何程式碼都無法連到下單路徑（core/guard.ts）
 installOrderGuard();
+// 緊急重設：網址加 ?reset=1 → 清掉分析頁／下單頁記住的商品與模式、K 棒快取，回到總覽（頁面卡死時的逃生口，pitfalls #25）
+if (new URLSearchParams(location.search).has('reset')) {
+  for (const k of ['stkMode', 'stkUnit', 'stkCode', 'tdCode', 'page', 'taCfg']) localStorage.removeItem('mw.' + k);
+  try { indexedDB.deleteDatabase('mw-bars'); } catch { /* 略過 */ }
+  history.replaceState(null, '', location.pathname + '#/overview');
+}
 import { initDiag } from './core/diag';
 import { hub } from './core/hub';
 import { $, cls, fin, fmt, LS, retry, session, sign } from './core/util';

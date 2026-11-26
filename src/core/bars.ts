@@ -20,6 +20,7 @@ export const labelOf = (iv: Interval) => (isMinute(iv) ? `${minutesOf(iv)}分` :
 //   分K：快取 1 分 K（最多保留約 400 天）；日／週／月K：快取彙整後的日K（1 分 K 量太大不保存）
 //   期貨近月的日K用連續月（TXFR1）才有多年歷史；遠月與選擇權只用自己的合約
 export const TARGET = 1000;
+export const MAX_BARS = 2000;   // 圖表最多畫幾根（太多會讓指標計算與繪圖卡死整個頁面）
 const FLOOR = '2018-12-01';          // shioaji 1 分 K 最早約從這時候開始
 const MINUTE_KEEP = 400;             // 分K快取最多保留幾個日曆天
 
@@ -141,14 +142,19 @@ export async function buildBars(c: Contract, iv: Interval, onProgress?: Progress
   let result: { bars: Bar[]; minute: Bar[]; note?: string } = { bars: [], minute: [] };
   if (isMinute(iv)) {
     const n = minutesOf(iv);
-    const agg = (m: Bar[]) => aggregateMinutes(m, n, deriv);
+    // 快取裡可能有約 400 天的 1 分 K（看過大週期後）：只彙整需要的那一段，最多畫 MAX_BARS 根（pitfalls #25）
+    const agg = (m: Bar[]) => {
+      const need = Math.min(m.length, MAX_BARS * n + n);
+      const out = aggregateMinutes(m.length > need ? m.slice(m.length - need) : m, n, deriv);
+      return out.length > MAX_BARS ? out.slice(out.length - MAX_BARS) : out;
+    };
     const minute = await history('m', c, deriv, (m) => agg(m).length >= TARGET, alive,
       (m) => onProgress?.({ bars: agg(m), minute: m, loading: true }));
     const bars = agg(minute);
     result = { bars, minute, note: bars.length < TARGET * 0.9 ? `${labelOf(iv)}最多保留約 ${MINUTE_KEEP} 天：共 ${bars.length} 根` : undefined };
   } else {
     const src = await historySource(c);
-    const shape = (d: Bar[]) => (iv === 'week' || iv === 'month' ? regroup(d, iv) : d);
+    const shape = (d: Bar[]) => { const r = iv === 'week' || iv === 'month' ? regroup(d, iv) : d; return r.length > MAX_BARS ? r.slice(r.length - MAX_BARS) : r; };
     // 週／月K：個股盡量抓滿（約 2018 年起）；期貨、選擇權維持 1000 根日K（資料量太大）
     const want = iv === 'day' || deriv ? TARGET : Infinity;
     const run = (from: Contract) => history('d', from, deriv, (d) => d.length >= want, alive,
