@@ -16,7 +16,7 @@ import { TIER, TIER_COLOR, tierOf } from '../core/flow';
 import { hub } from '../core/hub';
 import { dayStart, dstr } from '../core/session';
 import {
-  breakEven, closePnl, COND_NAME, type Cond, position, simBook, snap, stepDown, stepUp, type Side, type Tif,
+  COND_NAME, type Cond, position, simBook, snap, stepDown, stepUp, type Side, type Tif,
 } from '../core/simorder';
 import { cls, cssVar, esc, fin, fmt, fmtP, LS, pointerHeld, sign, tpeToday } from '../core/util';
 import type { Bar, Contract, Info, Tick } from '../types';
@@ -116,18 +116,36 @@ async function open(c: string) {
 
 // ───────── 庫存與部位 ─────────
 function realHolding() {
-  const ps = account.state.stkPos.filter((p) => p.code === code);
+  const ps = account.state.stkPos.filter((p) => p.code === code && p.direction !== 'Sell');
   const qty = ps.reduce((s, p) => s + p.quantity * 1000, 0);
   const avg = qty ? ps.reduce((s, p) => s + p.price * p.quantity * 1000, 0) / qty : 0;
-  return { qty, avg };
+  // 昨日庫存（yd_quantity）以前買的用一般稅率；今天新買的部分平倉可享當沖減稅（沒有這個欄位時視為昨日庫存）
+  const yd = ps.reduce((s, p) => s + Math.min(p.quantity, p.yd_quantity ?? p.quantity) * 1000, 0);
+  return { qty, avg, yd, today: qty - yd };
 }
 const curPos = () => position(realHolding(), code);
-/** 兩平價換成可掛的價位：多單往上取（賣在這價以上才不賠）、空單往下取 */
-function beTick(be: number, long: boolean) {
-  let p = snap(be, etf());
-  if (long && p < be - 1e-9) p = stepUp(p, etf());
-  if (!long && p > be + 1e-9) p = stepDown(p, etf());
-  return p;
+
+/**
+ * 實際庫存以價格 P 全部賣出的淨損益（使用者指定的計算原則，手續費依原價、逐項捨去）：
+ *   損益 ＝（賣出總額 − 賣出手續費 − 證交稅）−（庫存成本 ＋ 買進手續費）
+ *   庫存成本＝成交均價 × 股數；手續費＝金額 × 0.1425% 捨去；證交稅：今天買的 0.15%（當沖減稅）、昨日庫存 0.3%
+ */
+const FULL = 0.001425;
+function holdPnl(h: ReturnType<typeof realHolding>, P: number) {
+  const cost = Math.floor(h.avg * h.qty), buyFee = Math.floor(cost * FULL);
+  const sell = Math.floor(P * h.qty), sellFee = Math.floor(sell * FULL);
+  const tax = Math.floor(P * h.today * 0.0015) + Math.floor(P * h.yd * 0.003);
+  return sell - sellFee - tax - (cost + buyFee);
+}
+/** 損益兩平價（同上公式）：精確值與可掛的價位（往上取到升降單位） */
+function holdBreakEven(h: ReturnType<typeof realHolding>) {
+  if (!h.qty) return { exact: NaN, tick: NaN };
+  const taxR = (h.today * 0.0015 + h.yd * 0.003) / h.qty;
+  const exact = (h.avg * (1 + FULL)) / (1 - FULL - taxR);
+  let p = snap(exact, etf());
+  if (p < exact - 1e-9) p = stepUp(p, etf());
+  for (let i = 0; i < 50 && holdPnl(h, p) < 0; i++) p = stepUp(p, etf());  // 捨去造成的差額再往上找
+  return { exact, tick: p };
 }
 
 // ───────── 上方：個股資訊、庫存、損益試算 ─────────
@@ -142,41 +160,43 @@ function renderHead() {
       ${chip('參考', fmtP(ref))}${chip('漲停', fmtP(info?.limit_up ?? NaN), 'up')}${chip('跌停', fmtP(info?.limit_down ?? NaN), 'down')}${chip('總量', x ? fmt(x.vol) + ' 張' : '—')}</div>`;
 }
 
+/** 庫存狀況：只用實際庫存（帳務）；模擬成交另列一行，不混入 */
 function renderPos() {
-  const p = curPos();
+  const h = realHolding();
   const last = q()?.last ?? NaN;
-  const real = realHolding();
-  const unreal = p.qty && fin(last) ? closePnl(p.avg, p.qty, last, 'cash') : NaN;
-  const be = p.qty ? breakEven(p.avg, p.qty > 0) : NaN;
+  const unreal = h.qty && fin(last) ? holdPnl(h, last) : NaN;
+  const be = holdBreakEven(h);
+  const sim = curPos();
+  const simQty = sim.qty - h.qty;
   const kv = (k: string, v: string, c = '', sub = '') => `<div><span>${k}</span><b class="${c}">${v}</b>${sub ? `<small class="muted">${sub}</small>` : ''}</div>`;
   document.getElementById('td-pos')!.innerHTML = `<div class="td-kv">
-    ${kv('成交均價', p.qty ? fmtP(p.avg) : '—')}
-    ${kv('持有股數', p.qty ? fmt(p.qty) : '0', p.qty < 0 ? 'down' : '', p.qty ? `${p.qty < 0 ? '當沖空單 ' : ''}${fmt(Math.abs(p.qty) / 1000, 3).replace(/\.?0+$/, '')} 張` : '')}
-    ${kv('當沖損益兩平價', fin(be) ? fmtP(beTick(be, p.qty > 0)) : '—', 'accent', fin(be) ? `精確 ${be.toFixed(2)}・${p.qty > 0 ? '賣' : '買回'}在此價${p.qty > 0 ? '以上' : '以下'}不賠` : '')}
-    ${kv('未實現損益', fin(unreal) ? sign(unreal, 0) : '—', cls(unreal), '含費稅估算')}
-    ${kv('今日模擬已實現', p.traded ? sign(p.realized, 0) : '—', cls(p.realized), real.qty ? `實際庫存 ${fmt(real.qty)} 股` : '無實際庫存')}
+    ${kv('成交均價', h.qty ? fmtP(h.avg) : '—')}
+    ${kv('持有股數', fmt(h.qty), '', h.qty ? `${fmt(h.qty / 1000, 3).replace(/\.?0+$/, '')} 張${h.today ? `・今日買 ${fmt(h.today)} 股` : ''}` : '目前沒有庫存')}
+    ${kv('當沖損益兩平價', fin(be.tick) ? fmtP(be.tick) : '—', 'accent', fin(be.exact) ? `精確 ${be.exact.toFixed(2)}・賣在此價以上不賠` : '')}
+    ${kv('未實現損益', fin(unreal) ? sign(unreal, 0) : '—', cls(unreal), '扣原價手續費與證交稅')}
+    ${kv('模擬（今日）', sim.traded ? sign(sim.realized, 0) : '—', cls(sim.realized), sim.traded ? `模擬部位 ${simQty >= 0 ? '' : '空 '}${fmt(Math.abs(simQty))} 股` : '沒有模擬成交')}
   </div>`;
 }
 
-/** 損益試算：以買賣五檔各價位把整個部位平倉的淨損益；沒有部位時＝假設以賣一買進目前數量 */
+/** 損益試算：實際庫存在成交價上下五檔（依升降單位）全部賣出的淨損益，公式見 holdPnl() */
 function renderCalc() {
-  const x = q();
-  const asks = (x?.asks ?? []).slice(0, 5), bids = (x?.bids ?? []).slice(0, 5);
-  let p = curPos();
-  let note = `部位 ${fmt(p.qty)} 股・${COND_NAME[cond === 'odd' ? 'cash' : cond]}稅率`;
-  if (!p.qty) {
-    const px = asks[0]?.[0] ?? x?.last ?? NaN;
-    const n = qtyShares();
-    p = { ...p, qty: n, avg: px };
-    note = fin(px) ? `假設以 ${fmtP(px)} 買進 ${fmt(n)} 股` : '';
-  }
-  document.getElementById('td-calc-t')!.textContent = note;
-  const levels: [string, number][] = [...asks.map((a, i): [string, number] => [`賣${i + 1}`, a[0]]).reverse(), ...bids.map((b, i): [string, number] => [`買${i + 1}`, b[0]])];
-  if (!levels.length || !fin(p.avg)) { document.getElementById('td-calc')!.innerHTML = '<div class="muted">等待五檔報價…</div>'; return; }
-  const c = cond === 'dt' ? 'dt' : 'cash';
-  document.getElementById('td-calc')!.innerHTML = `<table class="grid td-ct"><tr><th></th>${levels.map(([k]) => `<th class="${k[0] === '賣' ? 'down' : 'up'}">${k}</th>`).join('')}</tr>
-    <tr><td class="muted">價格</td>${levels.map(([, v]) => `<td>${fmtP(v)}</td>`).join('')}</tr>
-    <tr><td class="muted">損益</td>${levels.map(([, v]) => { const r = closePnl(p.avg, p.qty, v, c); return `<td class="b ${cls(r)}">${sign(r, 0)}</td>`; }).join('')}</tr></table>`;
+  const h = realHolding();
+  const last = q()?.last ?? NaN;
+  const el = document.getElementById('td-calc')!;
+  const t = document.getElementById('td-calc-t')!;
+  if (!h.qty) { t.textContent = ''; el.innerHTML = '<div class="muted">目前沒有這檔的庫存，無法試算</div>'; return; }
+  t.textContent = `庫存 ${fmt(h.qty)} 股・均價 ${fmtP(h.avg)}・手續費原價 0.1425%・稅 ${h.today ? (h.yd ? '當沖 0.15%＋現股 0.3%' : '當沖 0.15%') : '0.3%'}`;
+  if (!fin(last)) { el.innerHTML = '<div class="muted">等待成交價…</div>'; return; }
+  const c = snap(last, etf());
+  const up: number[] = [], dn: number[] = [];
+  let p = c; for (let i = 0; i < 5; i++) { p = stepUp(p, etf()); up.unshift(p); }
+  p = c; for (let i = 0; i < 5; i++) { p = stepDown(p, etf()); dn.push(p); }
+  const lu = info?.limit_up ?? Infinity, ld = info?.limit_down ?? 0;
+  const levels: [string, number][] = [...up.map((v, i): [string, number] => [`上${5 - i}`, v]), ['成交', c] as [string, number], ...dn.map((v, i): [string, number] => [`下${i + 1}`, v])]
+    .filter(([, v]) => v <= lu + 1e-6 && v >= ld - 1e-6);
+  el.innerHTML = `<table class="grid td-ct"><tr><th></th>${levels.map(([k]) => `<th class="${k === '成交' ? 'accent' : k[0] === '上' ? 'up' : 'down'}">${k}</th>`).join('')}</tr>
+    <tr><td class="muted">價格</td>${levels.map(([k, v]) => `<td class="${k === '成交' ? 'b' : ''}">${fmtP(v)}</td>`).join('')}</tr>
+    <tr><td class="muted">損益</td>${levels.map(([, v]) => { const r = holdPnl(h, v); return `<td class="b ${cls(r)}">${sign(r, 0)}</td>`; }).join('')}</tr></table>`;
 }
 
 // ───────── 閃電下單：價位階梯 ─────────
@@ -209,8 +229,8 @@ function renderLadder() {
   const mine = simBook.working(code);
   const myAt = (p: number, s: Side) => mine.filter((o) => o.side === s && Math.abs(o.price - p) < 1e-6);
   const last = x?.last ?? NaN, ref = x?.ref ?? info?.reference ?? NaN;
-  const p0 = curPos();
-  const be = p0.qty ? beTick(breakEven(p0.avg, p0.qty > 0), p0.qty > 0) : NaN;
+  const p0 = realHolding();                           // 均價、兩平價標記只看實際庫存
+  const be = holdBreakEven(p0).tick;
   const unit = cond === 'odd' ? 1 : 1000;
   document.getElementById('td-ladder')!.innerHTML = ladderPrices().map((p) => {
     const b = bids.get(p), a = asks.get(p);

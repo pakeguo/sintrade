@@ -44,8 +44,8 @@ async function dbl(p, sel) {
   const rows = await p.$$eval('.td-row', (e) => e.length);
   await dbl(p, `.td-row:nth-child(${rows - 1}) .td-bv`); await p.waitForTimeout(800);
   res.working = await p.$$eval('#td-orders tr.td-o-working', (e) => e.length);
-  const working = await p.$('.td-my em[data-cxl]');
-  if (working) { await working.click(); await p.waitForTimeout(800); }
+  // 價位階梯每 300ms 重繪：用選擇器點（每次重新尋找元素），不要先抓元素再點
+  if (await p.$('.td-my em[data-cxl]')) { await p.click('.td-my em[data-cxl]'); await p.waitForTimeout(800); }
   res.cancelled = await p.$$eval('#td-orders tr.td-o-cancelled', (e) => e.length);
   // 現股賣出超過庫存要擋
   await p.click('#td-cond button[data-c="cash"]'); await p.fill('#td-n', '50');
