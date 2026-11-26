@@ -8,6 +8,8 @@ import { openTA } from '../core/nav';
 import { store } from '../core/store';
 import { cls, esc, fin, fmt, fmtP, isLive, LS, sign, pointerHeld } from '../core/util';
 import { TChain } from '../ui/tchain';
+import { Picker } from '../ui/picker';
+import { catalog } from '../core/catalog';
 import type { Contract } from '../types';
 import type { Page } from './page';
 
@@ -18,6 +20,7 @@ const TEMPLATE = `
 <section class="pd">
   <div class="card pd-left">
     <div class="pd-tabs" id="pd-tabs"></div>
+    <div class="pd-search" id="pd-search"></div>
     <div class="pd-tools" id="pd-tools"></div>
     <div class="pd-grid" id="pd-grid"></div>
   </div>
@@ -33,6 +36,7 @@ const cleanups: (() => void)[] = [];
 let tab = LS.get('pdTab') ?? 'hold';
 let items: Item[] = [];
 let chain: TChain | null = null;
+let picker: Picker | null = null;
 let futList: (Contract & { name?: string; delivery_month?: string })[] = [];
 const contracts = new Map<string, Contract>();
 
@@ -89,9 +93,8 @@ function renderTabs() {
     '<button class="pd-tab add" data-act="add" title="新增自訂頁籤">＋</button>';
   const custom = groups.find((g) => g.id === tab);
   document.getElementById('pd-tools')!.innerHTML = custom
-    ? `<input id="pd-add" placeholder="輸入股票代碼加入「${esc(custom.name)}」，Enter" autocomplete="off">
-       <button data-act="ren">改名</button><button data-act="del">刪除頁籤</button>
-       <span class="muted">${store.synced ? '✓ 電腦手機同步' : '只存在這個瀏覽器'}・拖曳小卡可排序</span>`
+    ? `<button data-act="ren">改名</button><button data-act="del">刪除頁籤</button>
+       <span class="muted">拖曳小卡可排序・滑到小卡右上角 × 可移除</span>`
     : tab === 'fut' ? '<span class="muted">微台指期貨近月與次月，結算後自動換月；轉倉價差＝次月 − 近月</span>'
       : `<span class="muted">${account.state.ready && !account.state.sAccount ? 'API Key 尚未綁定證券帳戶' : '證券庫存自動帶入'}</span>`;
 }
@@ -108,7 +111,7 @@ function card(it: Item) {
   const unit = isFut ? '口' : '張';
   const tint = !fin(pct) ? '' : pct > 0 ? 'tint-up' : pct < 0 ? 'tint-dn' : '';
   return `<div class="qc ${tint}" data-key="${esc(k)}" ${it.removable ? 'draggable="true"' : ''}>
-    <div class="qc-h"><b>${esc(it.c.security_type === 'STK' ? account.nameOf(it.c.code) : it.name)}</b><small>${esc(it.c.code)}</small>
+    <div class="qc-h"><b>${esc(it.c.security_type === 'STK' ? (catalog.get(it.c.code)?.name ?? account.nameOf(it.c.code)) : it.name)}</b><small>${esc(it.c.code)}</small>
       ${it.removable ? `<button class="qc-x" data-rm="${esc(it.c.code)}" title="移除">×</button>` : ''}</div>
     <div class="qc-p ${cls(ch)}${fl}">${fmtP(last)}</div>
     <div class="qc-c ${cls(ch)}">${sign(ch, last < 100 ? 2 : isFut ? 0 : 1)}　${fin(pct) ? sign(pct, 2) + '%' : ''}</div>
@@ -147,6 +150,7 @@ function frame() {
 
 function setTab(id: string) {
   tab = id; LS.set('pdTab', id);
+  picker?.setTarget(id);
   renderTabs();
   items.forEach((it) => hub.release(OWNER, it.c, ['Tick', 'BidAsk']));
   items = [];
@@ -193,16 +197,6 @@ function bind(el: HTMLElement) {
       if (confirm(`刪除頁籤「${g.name}」（${g.codes.length} 檔）？`)) { store.update((d) => { d.groups = d.groups.filter((x) => x.id !== g.id); }); setTab('hold'); }
     }
   });
-  el.querySelector('#pd-tools')!.addEventListener('keydown', (ev) => {
-    const e = ev as KeyboardEvent;
-    const input = e.target as HTMLInputElement;
-    if (e.key !== 'Enter' || input.id !== 'pd-add') return;
-    const code = input.value.trim().toUpperCase();
-    const g = store.data.groups.find((x) => x.id === tab);
-    if (!code || !g) return;
-    input.value = '';
-    if (!g.codes.includes(code)) store.update(() => { g.codes.push(code); });
-  });
   const grid = el.querySelector('#pd-grid')!;
   grid.addEventListener('click', (ev) => {
     const t = ev.target as HTMLElement;
@@ -234,7 +228,7 @@ function bind(el: HTMLElement) {
 
 export const productsPage: Page = {
   id: 'products',
-  title: '商品',
+  title: '報價',
   mount(el) {
     mounted = true;
     dirty = true;
@@ -243,6 +237,8 @@ export const productsPage: Page = {
     account.use(OWNER);
     renderTabs();
     chain = new TChain(document.getElementById('pd-chain')!);
+    picker = new Picker(document.getElementById('pd-search')!, store.data.groups.some((g) => g.id === tab) ? tab : null);
+    catalog.ensure(); // 背景建立股票名稱索引（已有且未過期就略過）
     cleanups.push(hub.on('change', () => { dirty = true; }));
     cleanups.push(account.on(() => { if (tab === 'hold') buildItems(); else dirty = true; renderTabs(); }));
     cleanups.push(store.on(() => { renderTabs(); if (tab !== 'hold' && tab !== 'fut') buildItems(); }));
@@ -262,6 +258,7 @@ export const productsPage: Page = {
     clearTimeout(timer);
     cleanups.splice(0).forEach((f) => f());
     chain?.destroy(); chain = null;
+    picker?.destroy(); picker = null;
     hub.releaseAll(OWNER);
     account.unuse(OWNER);
     items = [];

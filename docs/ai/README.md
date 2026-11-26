@@ -32,6 +32,7 @@ src/
     util.ts          格式化、台北時間、交易時段 session()、到期判斷 isLive()、LS 儲存、retry()
     optchain.ts      臺指選擇權共用：到期日清單、T 字列、合成期貨、computeMetrics()（期權頁與總覽共用）
     components.ts    權值股前 20（權重快取於 localStorage）、產業類股（index_components 串流），use/unuse 引用計數
+    catalog.ts       股票目錄：代碼→名稱／產業／交易所。stockList()＋逐檔 contractInfo 背景建立，localStorage `mw.catalog` 快取 7 天；search()、industries()、byIndustry()
     nav.ts           openTA()：點商品要去哪（之後換成技術分析窗口）
     store.ts         使用者設定（自選群組、大單門檻）：經 phone-server 開啟時存 mywatch-store.json（電腦手機同步），否則 localStorage
     indicators.ts    toDaily/regroup、SMA、布林、RSI、VWAP、分價量表
@@ -40,13 +41,14 @@ src/
   pages/
     page.ts          Page 介面：mount(el) / unmount()（離開頁面必須 releaseAll 退訂、清計時器）
     options.ts       期權頁（完成）
-    products.ts      商品（完成）：報價小卡（庫存／微台近次月／自訂頁籤）＋精簡 T 字報價
+    products.ts      報價（原「商品」，id 仍為 products）：報價小卡（庫存／微台近次月／自訂頁籤）＋精簡 T 字報價
     overview.ts      總覽（完成）：大盤｜台指期｜期權摘要、走勢疊圖、權值股前 10、類股熱力圖、帳戶三區
     account.ts       帳務（完成）：權益風險、組合 Greeks、期權部位、到期損益圖（SVG）、證券庫存、自選期間已實現損益
     stocks.ts        個股（完成）：自選群組（拖曳、同步）、盤中（分時+VWAP、五檔、內外盤、大單三級、逐筆）、
                      K 線（日週月、MA、布林、RSI、分價量表）
     blueprint.ts     藍圖頁產生器
   ui/
+    picker.ts        報價頁搜尋列（代碼／名稱）＋「選股」視窗（類股、成交量前 50、成交值前 50），加入到自選群組
     tchain.ts        精簡 T 字報價元件（結算日小卡、指標列、價平 ±N 檔）
     heatmap.ts       類股熱力圖 Canvas 渲染器（squarify 版面、緩動、粒子、光暈、tooltip；隱藏分頁自動暫停）
   api.ts             LiveBackend：HTTP + SSE

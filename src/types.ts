@@ -12,6 +12,7 @@ export interface Info {
   reference: number;
   limit_up: number;
   limit_down: number;
+  category?: string;   // 產業別代碼（股票）
 }
 
 export interface Snap {
@@ -172,6 +173,8 @@ export interface Backend {
   unsubscribe(c: Contract, q: QuoteType): Promise<void>;
   /** 列出某期貨商品（如 TXF）的各月份實際合約（不含 R1/R2 連續月） */
   futuresList(root: string): Promise<FutContract[]>;
+  /** 全部股票合約（只有代碼與交易所，名稱要另外查 contractInfo） */
+  stockList(): Promise<Contract[]>;
   optionRoots(): Promise<OptRoot[]>;
   optionChain(root: string): Promise<OptContract[]>;
   /** 帳戶清單與帳務查詢（唯讀） */

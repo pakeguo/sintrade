@@ -41,6 +41,14 @@ const STOCKS: [string, string, string, number, number][] = [
   ['2885', '元大金', '17', 7200, 34], ['3231', '緯創', '25', 7000, 120], ['2892', '第一金', '17', 6500, 28],
   ['2603', '長榮', '15', 6200, 210], ['2002', '中鋼', '20', 5000, 21], ['1301', '台塑', '3', 4500, 40],
 ];
+// DEMO 其他股票（搜尋與類股瀏覽用）：代碼、名稱、產業
+const EXTRA: [string, string, string][] = [
+  ['2603', '長榮', '15'], ['2609', '陽明', '15'], ['2615', '萬海', '15'], ['2002', '中鋼', '20'], ['1301', '台塑', '3'],
+  ['1303', '南亞', '3'], ['1101', '台泥', '1'], ['2912', '統一超', '18'], ['3008', '大立光', '26'], ['2409', '友達', '26'],
+  ['3481', '群創', '26'], ['2337', '旺宏', '24'], ['2408', '南亞科', '24'], ['3034', '聯詠', '24'], ['2379', '瑞昱', '24'],
+  ['1802', '台玻', '8'], ['0050', '元大台灣50', '00'], ['0056', '元大高股息', '00'], ['00878', '國泰永續高股息', '00'],
+  ['00919', '群益台灣精選高息', '00'], ['2618', '長榮航', '15'], ['2610', '華航', '15'], ['4904', '遠傳', '27'], ['3045', '台灣大', '27'],
+];
 const GROUPS: [string, string][] = [
   ['24', '半導體業'], ['28', '電子零組件業'], ['25', '電腦及週邊設備業'], ['17', '金融保險'], ['31', '其他電子業'],
   ['27', '通信網路業'], ['26', '光電業'], ['15', '航運業'], ['3', '塑膠工業'], ['20', '鋼鐵工業'], ['18', '貿易百貨'], ['5', '電機機械'],
@@ -102,7 +110,13 @@ export class DemoBackend implements Backend {
     for (const [code, name] of STOCKS) names[code] = name;
     const name = names[c.code] ?? l?.opt?.name ?? c.code;
     const ref = l?.ref ?? NaN;
-    return { name, reference: ref, limit_up: ref * 1.1, limit_down: ref * 0.9 };
+    const extra = EXTRA.find((x) => x[0] === c.code);
+    const cat = STOCKS.find((x) => x[0] === c.code)?.[2] ?? extra?.[2];
+    return { name: extra?.[1] ?? name, reference: ref, limit_up: ref * 1.1, limit_down: ref * 0.9, category: cat };
+  }
+
+  async stockList(): Promise<Contract[]> {
+    return [...STOCKS.map((s) => s[0]), ...EXTRA.map((s) => s[0])].map((code) => ({ security_type: 'STK', exchange: 'TSE', code }));
   }
 
   private norm(code: string) { return code.startsWith('TXF') ? this.futCode : code; }
@@ -239,7 +253,16 @@ export class DemoBackend implements Backend {
   }
 
   async recentTicks(): Promise<Tick[]> { return []; }
-  async scanner(): Promise<ScanRow[]> { return []; }
+  async scanner(type: string, _asc: boolean, count: number): Promise<ScanRow[]> {
+    const all = [...STOCKS.map((s) => [s[0], s[1], s[4]] as const), ...EXTRA.map((s) => [s[0], s[1], 20 + (Number(s[0]) % 300)] as const)];
+    const rows = all.map(([code, name, ref], i) => {
+      const close = this.stockPx.get(code) ?? ref * (1 + Math.sin(i * 7.3) * 0.03);
+      const volume = Math.round(3000 + Math.abs(Math.sin(i * 3.1)) * 80000);
+      return { code, name, close, chg: close - ref, pct: (close / ref - 1) * 100, volume, amount: volume * close * 1000 };
+    });
+    rows.sort((a, b) => (type === 'AmountRank' ? b.amount - a.amount : b.volume - a.volume));
+    return rows.slice(0, count);
+  }
 
   async futuresList(root = 'TXF'): Promise<FutContract[]> {
     const t = tpeNow();

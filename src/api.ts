@@ -71,7 +71,14 @@ export class LiveBackend implements Backend {
       reference: num(r.reference),
       limit_up: num(r.limit_up),
       limit_down: num(r.limit_down),
+      category: r.category != null ? String(r.category) : undefined,
     };
+  }
+
+  async stockList(): Promise<Contract[]> {
+    // 不帶 page/page_size 會一次回傳全部（docs/ai/shioaji-api.md）
+    const r = await req<{ contracts?: Contract[] } | Contract[]>('GET', '/data/contracts?security_type=STK&region=TW');
+    return Array.isArray(r) ? r : r.contracts ?? [];
   }
 
   async snapshots(cs: Contract[]): Promise<Snap[]> {

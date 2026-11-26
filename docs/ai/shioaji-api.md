@@ -16,6 +16,7 @@
 | GET | `/info` | `simulation` 欄位判斷環境 |
 | GET | `/data/contracts/{code}?security_type=&region=TW` | 合約基本資料；`TXFR1` 會帶 `target_code` |
 | GET | `/data/contracts/{code}/info` | 名稱、`reference`、`limit_up/down` |
+| GET | `/data/contracts?security_type=STK&region=TW` | 不帶 page/page_size 一次回傳全部；只有代碼與交易所（無名稱）。server log 顯示 STK 約 4 萬筆（含非一般股票）→ 前端只取 4 碼與 00 開頭 ETF |
 | GET | `/data/contracts/futures?root=TXF` | 各月份合約，含 `delivery_date`（可能是 `2026/06/17` 格式）|
 | GET | `/data/contracts/options/roots` | `[{root,name}]`；臺指週選 root 如 TX1–TX5、TXU… |
 | GET | `/data/contracts/options?root=TXO` | `strike_price`、`option_right`、`delivery_date` |
