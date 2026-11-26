@@ -35,12 +35,14 @@ const TEMPLATE = `
       <button id="add-watch" class="addw">＋ 加入自選</button>
     </div>
     <div id="live" class="live">
-      <div class="card lv-chart"><div id="ichart" class="ichart"></div>
+      <div class="card lv-chart"><div class="ichart"><div id="ichart" class="fc-in"></div></div>
         <div class="lgd"><i class="l-px"></i>成交價　<i class="l-vwap"></i>VWAP 均價　<span class="dash">- - </span>參考價</div></div>
       <div class="lv-side">
         <div class="card"><div class="ct">五檔</div><div id="sbook" class="book"></div></div>
         <div class="card"><div class="ct">內外盤<span class="tip" title="外盤：買方主動吃賣單成交；內盤：賣方主動砸買單成交">?</span></div><div id="inout"></div></div>
-        <div class="card"><div class="ct">大單統計<span class="tip" title="依單筆成交金額推估：中實戶 ≥100 萬、大戶 ≥500 萬、法人級 ≥2,000 萬。逐筆成交是匿名的，無法真正分辨身分；淨買＝外盤（主動買）−內盤（主動賣）">?</span></div><div id="big"></div></div>
+        <div class="card"><div class="ct">大單統計<span class="tip" title="依單筆成交金額推估：散戶 <100 萬、中實戶 ≥100 萬、大戶 ≥500 萬、法人級 ≥2,000 萬。逐筆成交是匿名的，無法真正分辨身分；淨買＝外盤（主動買）−內盤（主動賣）">?</span></div><div id="big"></div>
+          <div class="flow-head"><span>累計淨買</span><span id="flow-lgd" class="flow-lgd"></span></div>
+          <div class="flowchart"><div id="flowchart" class="fc-in"></div></div></div>
       </div>
       <div class="card lv-ticks"><div class="ct">逐筆成交<label class="ct-r"><input type="checkbox" id="only-big"> 只看大單</label></div><div id="ticks" class="ticks"></div></div>
     </div>
@@ -149,7 +151,7 @@ async function open(c: string) {
   LS.set('stkCode', c);
   if (location.hash !== `#/stocks/${c}`) history.replaceState(null, '', `#/stocks/${c}`);
   const seq = ++loadSeq;
-  ticks = []; info = null; contract = null; refPx = NaN;
+  ticks = []; info = null; contract = null; refPx = NaN; flowTicksLen = -1; lastFlowDraw = 0;
   if (refLine && pxLine) { pxLine.removePriceLine(refLine); refLine = null; }
   dirty = true;
   const ct = await contractOf(c);
@@ -249,7 +251,10 @@ function setIntraday(bars: Bar[]) {
   const axis = [];
   for (let m = 9 * 60; m <= 13 * 60 + 30; m++) axis.push({ time: (d0 + m * 60) as UTCTimestamp });
   axisLine!.setData(axis);
+  fAxis?.setData(axis);
   fitSession();
+  fitFlow();
+  flowTicksLen = -1;
 }
 
 /** 顯示範圍＝ 09:00 到 13:30（axis 的第 0 到最後一點）；等版面量好寬度再設定（pitfalls #7b） */
@@ -415,7 +420,8 @@ function renderBook() {
 }
 
 const tierOf = (amt: number) => { const [a, b, c] = store.data.bigTiers; return amt >= c ? 3 : amt >= b ? 2 : amt >= a ? 1 : 0; };
-const TIER = ['', '中實戶', '大戶', '法人級'];
+const TIER = ['散戶', '中實戶', '大戶', '法人級'];
+const TIER_COLOR = ['#8b95a3', '#8fb3ff', '#f5b94a', '#d17cff'];
 const wan = (n: number) => (Math.abs(n) >= 1e8 ? (n / 1e8).toFixed(2) + '億' : Math.round(n / 1e4).toLocaleString() + '萬');
 
 function renderFlow() {
@@ -432,10 +438,79 @@ function renderFlow() {
     <span class="down">內盤 ${fmt(inV)}</span></div><div class="pcbar"><i style="width:${(outV / tot) * 100}%"></i></div>` : '<div class="muted">尚無成交</div>';
   const net = (k: number) => buy[k] - sell[k];
   document.getElementById('big')!.innerHTML = `<table class="grid bigt"><thead><tr><th></th><th class="r">主動買</th><th class="r">主動賣</th><th class="r">淨買</th></tr></thead><tbody>
-    ${[3, 2, 1].map((k) => `<tr><td><span class="tag t${k}">${TIER[k]}</span><small class="muted"> ${cnt[k]}筆</small></td>
+    ${[3, 2, 1, 0].map((k) => `<tr><td><span class="tag t${k}">${TIER[k]}</span><small class="muted"> ${cnt[k]}筆</small></td>
       <td class="r up">${wan(buy[k])}</td><td class="r down">${wan(sell[k])}</td><td class="r b ${cls(net(k))}">${net(k) >= 0 ? '+' : ''}${wan(net(k))}</td></tr>`).join('')}
     </tbody></table>
     <div class="big-sum">大戶＋法人級淨買 <b class="${cls(net(2) + net(3))}">${net(2) + net(3) >= 0 ? '+' : ''}${wan(net(2) + net(3))}</b></div>`;
+  renderFlowChart();
+}
+
+// ───────── 累計淨買圖：散戶／中實戶／大戶／法人級，橫軸 09:00–13:30 ─────────
+let fchart: IChartApi | null = null;
+let fLines: ISeriesApi<'Line'>[] = [];
+let fAxis: ISeriesApi<'Line'> | null = null;
+let fchartRO: ResizeObserver | null = null;
+let lastFlowDraw = 0;
+let flowTicksLen = -1;
+
+const fmtMoney = (v: number) => (Math.abs(v) >= 1e8 ? (v / 1e8).toFixed(1) + '億' : Math.round(v / 1e4).toLocaleString() + '萬');
+
+function initFlowChart() {
+  const el = document.getElementById('flowchart')!;
+  fchart = createChart(el, {
+    ...chartOpts(),
+    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 10 },
+    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 0 },
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.1 } },
+    localization: { priceFormatter: fmtMoney },
+    handleScroll: false, handleScale: false,
+  });
+  // 透明線撐出 09:00–13:30 時間軸（pitfalls #14）
+  fAxis = fchart.addSeries(LineSeries, { color: 'rgba(0,0,0,0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  fLines = [0, 1, 2, 3].map((k) => fchart!.addSeries(LineSeries, {
+    color: TIER_COLOR[k], lineWidth: k >= 2 ? 2 : 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  }));
+  fLines[0].createPriceLine({ price: 0, color: 'rgba(139,149,163,.6)', lineStyle: LineStyle.Dashed, lineWidth: 1, title: '' });
+  let lastW = 0;
+  fchartRO = new ResizeObserver(([e]) => {
+    const w = Math.round(e.contentRect.width);
+    if (w > 0 && w !== lastW) { lastW = w; fitFlow(); }
+  });
+  fchartRO.observe(el);
+}
+
+function fitFlow() {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const el = document.getElementById('flowchart');
+    if (!fchart || !el || !el.clientWidth) return;
+    fchart.resize(el.clientWidth, el.clientHeight);
+    fchart.timeScale().setVisibleLogicalRange({ from: -6, to: 270 + 6 });
+  }));
+}
+
+/** 每分鐘累計各層級「外盤−內盤」金額；資料量大時最多每秒重畫一次 */
+function renderFlowChart() {
+  if (!fchart || !fLines.length) return;
+  const now = performance.now();
+  if (ticks.length === flowTicksLen && now - lastFlowDraw < 5000) return;
+  if (now - lastFlowDraw < 1000) return;
+  lastFlowDraw = now;
+  flowTicksLen = ticks.length;
+  const cum = [0, 0, 0, 0];
+  const series: { time: UTCTimestamp; value: number }[][] = [[], [], [], []];
+  let cur = 0;
+  const flush = () => { for (let k = 0; k < 4; k++) series[k].push({ time: cur as UTCTimestamp, value: cum[k] }); };
+  for (const tk of ticks) {
+    const b = Math.ceil(tk.t / 60) * 60;
+    if (b !== cur) { if (cur) flush(); cur = b; }
+    const amt = tk.price * tk.vol * 1000;
+    const k = tierOf(amt);
+    if (tk.side === 1) cum[k] += amt; else if (tk.side === 2) cum[k] -= amt;
+  }
+  if (cur) flush();
+  for (let k = 0; k < 4; k++) fLines[k].setData(series[k]);
+  document.getElementById('flow-lgd')!.innerHTML = [3, 2, 1, 0].map((k) =>
+    `<span><i style="background:${TIER_COLOR[k]}"></i>${TIER[k]} <b class="${cls(cum[k])}">${cum[k] >= 0 ? '+' : ''}${fmtMoney(cum[k])}</b></span>`).join('');
 }
 
 function renderTicks() {
@@ -545,7 +620,7 @@ function bind(el: HTMLElement) {
     const m = (ev.target as HTMLElement).dataset.m as 'live' | 'k' | undefined;
     if (!m || m === mode) return;
     mode = m; LS.set('stkMode', m); applyMode(); dirty = true;
-    if (m === 'live') fitSession();
+    if (m === 'live') { fitSession(); fitFlow(); }
     if (m === 'k') loadK();
   });
   el.querySelector('#kunit')!.addEventListener('click', (ev) => {
@@ -575,6 +650,7 @@ export const stocksPage: Page = {
     bind(el);
     applyMode();
     initIntraday();
+    initFlowChart();
     initK();
     account.use('stocks');
     renderGroups();
@@ -605,6 +681,8 @@ export const stocksPage: Page = {
     wlSubs = new Set();
     contract = null; code = '';
     ichartRO?.disconnect(); ichartRO = null;
+    fchartRO?.disconnect(); fchartRO = null;
+    fchart?.remove(); fchart = null; fLines = []; fAxis = null; flowTicksLen = -1;
     ichart?.remove(); kchart?.remove(); rchart?.remove();
     ichart = kchart = rchart = null; pxLine = vwLine = axisLine = null; ivol = null; candle = null; kvol = null; rsiS = null;
     maS = []; bbS = []; refLine = null;

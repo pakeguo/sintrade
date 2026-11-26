@@ -154,6 +154,8 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 - 解法：卡片 `position: relative`，清單 `position: absolute; top/bottom/left/right` 鋪在卡內 → 列高只由走勢圖決定。
   中間欄最後一張卡 `flex: 1` 往下填滿。窄螢幕（≤1400px）清單移到下方時改回一般定位。
 - 驗證：Playwright 量 `.lv-chart`、`.lv-side .card:last-child`、`.lv-ticks` 的 top/bottom 是否相等。
+- lightweight-charts `autoSize` 的圖表放在 flex:1 容器裡也會互相撐高（容器依畫布長、畫布依容器長）→
+  一律包一層 `position: relative` 外框＋`position: absolute; inset: 0` 內層（`.fc-in`）再建立圖表。
 
 ## 8. IV 與 e-Leader 不同（不是 bug）
 

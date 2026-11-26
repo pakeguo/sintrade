@@ -225,15 +225,27 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .lv-chart { padding: 8px; }
 /* 分時圖高度跟著視窗：扣掉上方標題列、個股資訊列與工具列 */
 .ichart { height: clamp(360px, calc(100vh - 300px), 760px); }
+/* 盤中：走勢圖卡跟著整列高度填滿（中間欄較高時不留白）；圖表放絕對定位內層避免互相撐高 */
+.lv-chart { display: flex; flex-direction: column; }
+.lv-chart .ichart { flex: 1 0 auto; position: relative; }
 .lv-chart .lgd { margin: 4px 0 0; display: block; }
 .l-px { background: #c9d1d9; } .l-vwap { background: var(--accent); } .dash { color: var(--muted); letter-spacing: -1px; }
 .lv-side { display: flex; flex-direction: column; gap: 10px; }
 .lv-side .card { min-height: 0; }
 /* 三欄上下切齊：中間欄最後一張卡（大單統計）往下填滿，高度跟走勢圖一致 */
-.lv-side .card:last-child { flex: 1; }
+.lv-side .card:last-child { flex: 1; display: flex; flex-direction: column; }
+/* 大單累計淨買圖：填滿大單統計卡剩下的高度 */
+.flow-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); }
+.flow-lgd { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.flow-lgd span { white-space: nowrap; } .flow-lgd b { font-weight: 600; }
+.flow-lgd i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 3px; }
+.flowchart { flex: 1; min-height: 150px; margin-top: 4px; position: relative; }
+/* 圖表放在絕對定位內層：畫布不會反過來把卡片撐高（pitfalls #15） */
+.fc-in { position: absolute; inset: 0; }
 .bigt td, .bigt th { padding: 4px 4px; font-size: 12px; }
 .big-sum { margin-top: 6px; font-size: 13px; color: var(--muted); } .big-sum b { font-size: 15px; }
 .tag { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 4px; font-weight: 700; }
+.tag.t0 { background: rgba(139,149,163,.18); color: #b4bdc8; }
 .tag.t1 { background: rgba(143,179,255,.2); color: #8fb3ff; }
 .tag.t2 { background: rgba(245,185,74,.25); color: var(--accent); }
 .tag.t3 { background: #d17cff; color: #1a0b22; }
