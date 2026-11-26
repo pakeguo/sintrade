@@ -747,3 +747,4 @@ table.chain { width: 100%; border-collapse: collapse; }
 .td-man button:hover, .td-mkt button:hover { filter: brightness(1.12); }
 .td-p { cursor: pointer; }
 @media (max-width: 1400px) { .td-top { grid-template-columns: 1fr 1fr; } }
+.ta-st { margin-left: 14px; font-size: 12px; } .ta-st.note { color: var(--up); }

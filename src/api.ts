@@ -14,11 +14,20 @@ const BASE = '/api/v1';
 async function req<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
   // 下單防堵（core/guard.ts）：就算日後有人在這裡加了下單呼叫，也會在送出前被擋下
   if (isOrderUrl(BASE + path)) throw new OrderBlockedError(BASE + path);
-  const res = await fetch(BASE + path, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  // 一律限時：server 沒回應時不會無限等待（pitfalls #24）；歷史 K 棒資料量大，給較長時間
+  const ms = /\/data\/(kbars|ticks)/.test(path) ? 90_000 : 30_000;
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(ms),
+    });
+  } catch (e) {
+    if ((e as Error)?.name === 'TimeoutError') throw new Error(`${method} ${path} 逾時（${ms / 1000} 秒沒有回應）`);
+    throw e;
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`${method} ${path} → ${res.status} ${text.slice(0, 200)}`);

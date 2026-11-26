@@ -33,7 +33,7 @@ export class TAView {
 
   constructor(private host: HTMLElement) {
     host.innerHTML = `
-      <div class="ta-bar"><span id="ta-sum" class="ta-sum"></span></div>
+      <div class="ta-bar"><span id="ta-sum" class="ta-sum"></span><span id="ta-st" class="ta-st muted"></span></div>
       <div class="ta-panes">
         <div class="ta-pane main"><div class="ta-lgd" id="ta-l0"></div><div class="ta-c" id="ta-c0"></div></div>
         <div class="ta-pane"><div class="ta-lgd" id="ta-l1"></div><div class="ta-c" id="ta-c1"></div></div>
@@ -48,6 +48,11 @@ export class TAView {
   }
 
   private save() { LS.setJSON('taCfg', this.cfg); this.renderSum(); }
+  /** 載入進度／錯誤訊息（顯示在指標摘要右側） */
+  status(text: string, err = false) {
+    const el = this.host.querySelector<HTMLElement>('#ta-st');
+    if (el) { el.textContent = text; el.className = `ta-st ${err ? 'note' : 'muted'}`; }
+  }
   private renderSum() {
     this.host.querySelector('#ta-sum')!.innerHTML =
       `<b>主圖</b> K＋量${this.cfg.main.map((p) => `・${esc(label(p))}`).join('')}　<b>副圖1</b> ${esc(label(this.cfg.sub[0]))}　<b>副圖2</b> ${esc(label(this.cfg.sub[1]))}`;

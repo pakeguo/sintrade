@@ -603,7 +603,9 @@ async function loadK() {
   let got = false;
   kUserMoved = false;
   await buildBars(contract, iv, (r) => {
-    if (!alive() || (!r.bars.length && r.loading)) return;
+    if (!alive()) return;
+    if (r.error && !r.loading && !got) { document.getElementById('kinfo')!.innerHTML = `<span class="note">讀取失敗：${esc(r.error)}（切換週期或重新整理可重試）</span>`; return; }
+    if (!r.bars.length) return;
     const first = !got;
     kBars = mergeOlder(got ? kBars : [], r.bars);
     vpBars = r.minute;
@@ -663,8 +665,12 @@ async function loadTA() {
   let got = false;
   taReady = false;
   kUserMoved = false;
+  taView.status(`載入 ${labelOf(iv)}…`);
   await buildBars(contract, iv, (r) => {
-    if (!alive() || (!r.bars.length && r.loading)) return;
+    if (!alive()) return;
+    if (!r.loading) taView?.status(r.error ? `讀取失敗：${r.error}（切換週期或重新整理可重試）` : r.note ?? `共 ${taBars.length || r.bars.length} 根`, !!r.error);
+    else if (r.bars.length) taView?.status(`已載入 ${r.bars.length} 根，往前補資料中…`);
+    if (!r.bars.length) return;
     const first = !got;
     taBars = mergeOlder(got ? taBars : [], r.bars);
     got = true;

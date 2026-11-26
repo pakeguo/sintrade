@@ -42,29 +42,31 @@ export function installOrderGuard() {
   installed = true;
   const w = window as unknown as Record<string, unknown>;
 
-  const origFetch = window.fetch.bind(window);
+  // 瀏覽器擴充功能（例：requests.js）常會改寫 window.fetch；設成唯讀會讓它們丟錯誤（pitfalls #24）。
+  // 改用存取子：允許「指定」但直接忽略（不丟錯誤），實際使用的永遠是防堵版 fetch。
+  // 不能把擴充功能的版本接進來：它多半是包住我們的 fetch，接進來會互相呼叫變成無限遞迴。
+  const native = window.fetch.bind(window);
   const guardedFetch: typeof fetch = (input, init) => {
-    if (isOrderUrl(input)) return Promise.reject(new OrderBlockedError(String(input instanceof Request ? input.url : input)))
-      .finally(() => blockedLog.push({ at: Date.now(), url: String(input) }));
-    return origFetch(input, init);
+    if (isOrderUrl(input)) {
+      blockedLog.push({ at: Date.now(), url: String(input instanceof Request ? input.url : input) });
+      return Promise.reject(new OrderBlockedError(String(input instanceof Request ? input.url : input)));
+    }
+    return native(input, init);
   };
-  Object.defineProperty(window, 'fetch', { value: guardedFetch, writable: false, configurable: false });
+  Object.defineProperty(window, 'fetch', { get: () => guardedFetch, set: () => undefined, configurable: false });
 
   const xo = XMLHttpRequest.prototype.open;
-  Object.defineProperty(XMLHttpRequest.prototype, 'open', {
-    value: function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+  const guardedOpen = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
       if (isOrderUrl(url)) blocked(url);
       return (xo as (...a: unknown[]) => void).call(this, method, url, ...rest);
-    },
-    writable: false, configurable: false,
-  });
+  };
+  // 同 fetch：擴充功能改寫時不丟錯誤、也不生效
+  Object.defineProperty(XMLHttpRequest.prototype, 'open', { get: () => guardedOpen, set: () => undefined, configurable: false });
 
   if (navigator.sendBeacon) {
     const sb = navigator.sendBeacon.bind(navigator);
-    Object.defineProperty(navigator, 'sendBeacon', {
-      value: (url: string | URL, data?: BodyInit | null) => (isOrderUrl(url) ? (blocked(url), false) : sb(url, data)),
-      writable: false, configurable: false,
-    });
+    const gb = (url: string | URL, data?: BodyInit | null) => (isOrderUrl(url) ? (blocked(url), false) : sb(url, data));
+    Object.defineProperty(navigator, 'sendBeacon', { get: () => gb, set: () => undefined, configurable: false });
   }
 
   for (const name of ['EventSource', 'WebSocket'] as const) {
@@ -80,6 +82,6 @@ export function installOrderGuard() {
       try { Object.defineProperty(Guarded, k, Object.getOwnPropertyDescriptor(Orig, k)!); } catch { /* 略過 */ }
     }
     (Guarded as unknown as { prototype: unknown }).prototype = Orig.prototype;
-    Object.defineProperty(window, name, { value: Guarded, writable: false, configurable: false });
+    Object.defineProperty(window, name, { get: () => Guarded, set: () => undefined, configurable: false });
   }
 }

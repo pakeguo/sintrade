@@ -27,8 +27,9 @@ interface Hist { bars: Bar[]; from: string; to: string; done?: boolean } // from
 const mem = new Map<string, Hist>();
 const locks = new Map<string, Promise<unknown>>();
 function lock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const prev = locks.get(key) ?? Promise.resolve();
-  const next = prev.catch(() => undefined).then(fn);
+  // 前一個讀取若卡住（server 沒回應），最多等 20 秒就不再等它，避免畫面永遠空白（pitfalls #24）
+  const prev = Promise.race([(locks.get(key) ?? Promise.resolve()).catch(() => undefined), new Promise((r) => setTimeout(r, 20_000))]);
+  const next = prev.then(fn);
   locks.set(key, next.catch(() => undefined));
   return next;
 }
@@ -48,7 +49,8 @@ async function historySource(c: Contract): Promise<Contract> {
   return near === c.code ? { security_type: 'FUT', exchange: c.exchange || 'TAIFEX', code: root + 'R1' } : c;
 }
 
-type Progress = (r: { bars: Bar[]; minute: Bar[]; loading: boolean; note?: string }) => void;
+type Progress = (r: { bars: Bar[]; minute: Bar[]; loading: boolean; note?: string; error?: string }) => void;
+let lastError = '';
 
 /**
  * 抓歷史：先從快取最後一天補到今天，再往前分批抓到「夠了」（enough）或沒有更早的資料。
@@ -61,7 +63,7 @@ async function history(kind: 'm' | 'd', src: Contract, deriv: boolean, enough: (
     const today = tpeToday();
     const chunk = kind === 'm' ? (deriv ? 10 : 30) : (deriv ? 21 : 90);
     const toUnit = (mins: Bar[]) => (kind === 'm' ? mins : toDaily(mins, deriv ? (t) => dayStart(sessionDay(t)) : undefined));
-    const fetch = (a: string, b: string) => hub.be.kbars(src, a, b).then(toUnit);
+    const fetch = (a: string, b: string) => hub.be.kbars(src, a, b).then(toUnit, (e) => { lastError = String((e as Error)?.message ?? e); throw e; });
     let h = mem.get(key) ?? (await idbGet<Hist>(key)) ?? { bars: [], from: today, to: '' };
     // 1) 往後補：從快取的前一個交易日重抓（期貨夜盤屬於下一交易日，所以多抓一天），只換掉 to 之後的 K 棒
     if (h.to) {
@@ -135,6 +137,7 @@ export function aggregateMinutes(bars: Bar[], n: number, deriv = false): Bar[] {
  */
 export async function buildBars(c: Contract, iv: Interval, onProgress?: Progress, alive: () => boolean = () => true) {
   const deriv = isDeriv(c);
+  lastError = '';
   let result: { bars: Bar[]; minute: Bar[]; note?: string } = { bars: [], minute: [] };
   if (isMinute(iv)) {
     const n = minutesOf(iv);
@@ -154,7 +157,8 @@ export async function buildBars(c: Contract, iv: Interval, onProgress?: Progress
     if (!days.length && src !== c) days = await run(c); // 連續月抓不到 → 改用合約本身
     result = { bars: shape(days), minute: days };
   }
-  onProgress?.({ ...result, loading: false });
+  if (!result.bars.length && lastError) result.note = `讀取失敗：${lastError}`;
+  onProgress?.({ ...result, loading: false, error: !result.bars.length ? lastError || '沒有資料' : undefined });
   return result;
 }
 

@@ -4,7 +4,7 @@ const DB = 'mw-bars', ST = 'hist';
 let dbp: Promise<IDBDatabase | null> | null = null;
 
 function db() {
-  dbp ??= new Promise((res) => {
+  dbp ??= within(new Promise<IDBDatabase | null>((res) => {
     try {
       const r = indexedDB.open(DB, 1);
       r.onupgradeneeded = () => r.result.createObjectStore(ST);
@@ -12,11 +12,17 @@ function db() {
       r.onerror = () => res(null);
       r.onblocked = () => res(null);
     } catch { res(null); }
-  });
+  }), 4000, null);
   return dbp;
 }
 
+/** 另一個分頁占住資料庫或瀏覽器異常時，最多等 4 秒就當作沒有快取（pitfalls #24） */
+const within = <T>(p: Promise<T>, ms: number, fallback: T) => Promise.race([p, new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
+
 export async function idbGet<T>(key: string): Promise<T | undefined> {
+  return within(idbGet0<T>(key), 4000, undefined);
+}
+async function idbGet0<T>(key: string): Promise<T | undefined> {
   const d = await db();
   if (!d) return undefined;
   return new Promise((res) => {
@@ -29,6 +35,9 @@ export async function idbGet<T>(key: string): Promise<T | undefined> {
 }
 
 export async function idbSet(key: string, val: unknown): Promise<void> {
+  return within(idbSet0(key, val), 8000, undefined);
+}
+async function idbSet0(key: string, val: unknown): Promise<void> {
   const d = await db();
   if (!d) return;
   await new Promise<void>((res) => {
