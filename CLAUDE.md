@@ -21,4 +21,6 @@
 - 新的設計決策寫進 `docs/ai/decisions.md`。
 - 重繪迴圈（frame）一律加 `!pointerHeld()` 判斷，否則實盤時按鈕點不到（pitfalls #12）。
 - 頁面訂閱行情一律透過 `hub.acquire/release`（見 `docs/ai/README.md` 規則）。
+- 改 CSS／版面後，先 `npx vite --port 5173`，再跑 `node tests/ui/layout.cjs` 與 `node tests/ui/clicks.cjs`（所有頁面，1920×912），不能只測改的那一頁（pitfalls #16）。
+- 頁面專屬 class 用頁面前綴（`stk-`、`ov-`、`pd-`、`ac-`），避免撞名。
 - 改完前端要能 `npx tsc --noEmit` 與 `npx vite build` 通過；可用 `?demo=1` 以假資料預覽。

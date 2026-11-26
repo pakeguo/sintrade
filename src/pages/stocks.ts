@@ -34,7 +34,7 @@ const TEMPLATE = `
       <div class="seg tg" id="ktog"><button data-t="ma">均線</button><button data-t="bb">布林</button><button data-t="rsi">RSI</button><button data-t="vp">分價量</button></div>
       <button id="add-watch" class="addw">＋ 加入自選</button>
     </div>
-    <div id="live" class="live">
+    <div id="live" class="stk-live">
       <div class="card lv-chart"><div class="ichart"><div id="ichart" class="fc-in"></div></div>
         <div class="lgd"><i class="l-px"></i>成交價　<i class="l-vwap"></i>VWAP 均價　<span class="dash">- - </span>參考價</div></div>
       <div class="lv-side">

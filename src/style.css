@@ -220,8 +220,9 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .seg button.on { background: var(--accent); color: #1a1405; }
 .seg.tg button.on { background: rgba(245,185,74,.25); color: var(--text); }
 .addw { margin-left: auto; } .addw.on { color: var(--accent); border-color: var(--accent); }
-.live { display: grid; grid-template-columns: minmax(0, 1fr) 280px 300px; gap: 10px; align-items: stretch; }
-.live[hidden], .kview[hidden], .seg[hidden], .rchart[hidden] { display: none; }
+/* 個股盤中三欄。注意：不要用 .live 這種通用名稱（總覽「即時」標籤、連線狀態也有 live class，pitfalls #16） */
+.stk-live { display: grid; grid-template-columns: minmax(0, 1fr) 280px 300px; gap: 10px; align-items: stretch; }
+.stk-live[hidden], .kview[hidden], .seg[hidden], .rchart[hidden] { display: none; }
 .lv-chart { padding: 8px; }
 /* 分時圖高度跟著視窗：扣掉上方標題列、個股資訊列與工具列 */
 .ichart { height: clamp(360px, calc(100vh - 300px), 760px); }
@@ -255,7 +256,7 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
    （flex:1 + height:0 擋不住內容撐高 grid 列，實測整列被撐到 3000px） */
 @media (min-width: 1401px) {
   /* 盤中三欄高度＝視窗剩餘高度（扣掉頁首、個股資訊列、工具列），1920×1080 瀏覽器不需要捲動 */
-  .live { height: calc(100vh - 208px); min-height: 540px; grid-template-rows: minmax(0, 1fr); }
+  .stk-live { height: calc(100vh - 208px); min-height: 540px; grid-template-rows: minmax(0, 1fr); }
   .lv-chart .ichart { flex: 1 1 0; height: auto; min-height: 0; }
   .lv-side { min-height: 0; gap: 8px; }
   .lv-side .card { padding: 7px 12px; }
@@ -495,7 +496,7 @@ table.chain { width: 100%; border-collapse: collapse; }
 @media (max-width: 1400px) {
   .ov-top { grid-template-columns: 1fr; }
   .ov-chart { flex: none; height: 240px; }
-  .live { grid-template-columns: minmax(0, 1fr) 280px; }
+  .stk-live { grid-template-columns: minmax(0, 1fr) 280px; }
   .lv-ticks { grid-column: 1 / -1; } .ticks { max-height: 320px; height: auto; }
 }
 @media (max-width: 1100px) {
@@ -504,7 +505,7 @@ table.chain { width: 100%; border-collapse: collapse; }
   .tc-wrap { max-height: none; }
   .stk { grid-template-columns: 1fr; }
   .wl { position: static; max-height: 360px; }
-  .live { grid-template-columns: 1fr; }
+  .stk-live { grid-template-columns: 1fr; }
   .ov-row.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ov-row.two { grid-template-columns: 1fr; }
 }

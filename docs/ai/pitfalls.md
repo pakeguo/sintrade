@@ -157,6 +157,14 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 - lightweight-charts `autoSize` 的圖表放在 flex:1 容器裡也會互相撐高（容器依畫布長、畫布依容器長）→
   一律包一層 `position: relative` 外框＋`position: absolute; inset: 0` 內層（`.fc-in`）再建立圖表。
 
+## 16. CSS class 撞名：個股頁的 `.live` 把總覽熱力圖撐爆 ⚠️
+
+**現象**（2026-11-26）：調整個股頁高度後，總覽「不能點擊、大小比例失調」，熱力圖被推到畫面外。
+**根因**：個股盤中容器用了通用 class `.live`，而總覽熱力圖的「● 即時」標籤即時時也加 `live` class（連線狀態 `.conn.live` 也是）。
+新增 `.live { height: calc(100vh - 208px) }` 後，這個小標籤被撐成 700px 高。之前 `.live { display:grid }` 就已經套上去了，只是沒有明顯症狀。
+**解法**：改名 `.stk-live`。**規則：頁面專屬元素用「頁面前綴」命名（`stk-`、`ov-`、`pd-`、`ac-`），不要用 live/active/on 這類通用字當主要 class。**
+**防範**：改 CSS 後一定要跑 `tests/ui/layout.cjs` 與 `tests/ui/clicks.cjs`（涵蓋所有頁面），不能只測改的那一頁。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：
