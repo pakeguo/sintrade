@@ -29,6 +29,7 @@ export interface Margin {
 }
 export interface Position {
   code: string; direction: 'Buy' | 'Sell' | string; quantity: number; price: number; last_price: number; pnl: number;
+  yd_quantity?: number; // 昨日庫存數量（今天新買的＝quantity − yd_quantity）
 }
 interface Realized { pnl: number }
 export interface RealizedRow { code: string; date: string; quantity: number; pnl: number; direction?: string; account: 'F' | 'S' }
@@ -220,11 +221,35 @@ class AccountService {
     return sign * (last! - p.price) * p.quantity * 1000;
   }
 
+  /** 證券「今日」損益：昨日已持有的部分以參考價（昨收）計，今天新買的部分以成本計（docs/ai/decisions.md） */
+  stockDayPnl(p: Position): number {
+    const x = hub.quotes.get(p.code);
+    const last = x?.last ?? p.last_price, ref = x?.ref ?? NaN;
+    if (!fin(last)) return NaN;
+    const sg = p.direction === 'Sell' ? -1 : 1;
+    const yd = fin(p.yd_quantity ?? NaN) ? Math.min(p.yd_quantity!, p.quantity) : p.quantity;
+    const fromYd = fin(ref) ? (last - ref) * yd : NaN;
+    const fromToday = (last - p.price) * (p.quantity - yd);
+    if (!fin(fromYd)) return yd === 0 ? sg * fromToday * 1000 : NaN;
+    return sg * (fromYd + fromToday) * 1000;
+  }
+
+  /** 期權部位「今日」變動（以參考價計；對應不到合約時無法計算） */
+  futDayPnl(p: Position): number {
+    const m = this.mapped.get(p.code);
+    const x = m ? hub.quotes.get(keyOf(m.contract)) : undefined;
+    if (!m || !x || !fin(x.last) || !fin(x.ref) || !fin(m.mult)) return NaN;
+    return (p.direction === 'Sell' ? -1 : 1) * (x.last - x.ref) * p.quantity * m.mult;
+  }
+
   totals() {
     const s = this.state;
     const unrealF = s.futPos.reduce((x, p) => x + (this.futPnl(p) || 0), 0);
     const unrealS = s.stkPos.reduce((x, p) => x + this.stockPnl(p), 0);
-    return { unrealF, unrealS, realizedF: s.realizedF, realizedS: s.realizedS };
+    const sum = (arr: number[]) => arr.reduce((a, v) => a + (fin(v) ? v : 0), 0);
+    const dayF = sum(s.futPos.map((p) => this.futDayPnl(p)));
+    const dayS = sum(s.stkPos.map((p) => this.stockDayPnl(p)));
+    return { unrealF, unrealS, realizedF: s.realizedF, realizedS: s.realizedS, dayF, dayS };
   }
 }
 

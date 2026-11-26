@@ -261,12 +261,13 @@ function renderAccount() {
   const noS = s.ready && !s.sAccount ? '<div class="note">API Key 尚未綁定證券帳戶，證券部分無資料</div>' : '';
   const realized = (fin(t.realizedF) ? t.realizedF : 0) + (fin(t.realizedS) ? t.realizedS : 0);
   const unreal = t.unrealF + t.unrealS;
-  const total = realized + unreal;
-  pnlEl.innerHTML = `<div class="ct">今日損益<span class="tip" title="今日已實現損益＋目前持倉未實現損益。股票未實現損益即時跳動，期權約 15 秒更新">?</span></div>
+  const total = realized + t.dayF + t.dayS;
+  pnlEl.innerHTML = `<div class="ct">今日損益<span class="tip" title="今日已實現＋持倉「今天」的漲跌變動（昨日持有以昨收計、今天新買以成本計）。累計未實現是從買進至今的總損益，不算在今日。未扣手續費與稅">?</span></div>
     ${loading || `<div class="cm ${cls(total)}">${money(total)}</div>
     <div class="kv2"><span>已實現（今日）</span><b class="${cls(realized)}">${money(realized)}</b></div>
-    <div class="kv2"><span>未實現・期權</span><b class="${cls(t.unrealF)}">${money(t.unrealF)}</b></div>
-    <div class="kv2"><span>未實現・證券</span><b class="${cls(t.unrealS)}">${s.sAccount ? money(t.unrealS) : '—'}</b></div>`}${noS}`;
+    <div class="kv2"><span>持倉今日・期權</span><b class="${cls(t.dayF)}">${money(t.dayF)}</b></div>
+    <div class="kv2"><span>持倉今日・證券</span><b class="${cls(t.dayS)}">${s.sAccount ? money(t.dayS) : '—'}</b></div>
+    <div class="kv2 sub"><span>累計未實現（參考）</span><b class="${cls(unreal)}">${money(unreal)}</b></div>`}${noS}`;
 
   const m = s.margin;
   const risk = m?.risk_indicator ?? NaN;

@@ -122,7 +122,8 @@ function renderStkSummary() {
     const last = x?.last ?? p.last_price, sg = p.direction === 'Sell' ? -1 : 1;
     mv += last * p.quantity * 1000;
     unreal += account.stockPnl(p);
-    if (fin(x?.ref ?? NaN)) today += sg * (last - x!.ref) * p.quantity * 1000;
+    const d = account.stockDayPnl(p);
+    if (fin(d)) today += d;
   }
   const st = [...s.settlements].sort((a, b) => a.T - b.T);
   el.innerHTML = `<div class="ct">證券帳戶<span class="ct-r">${s.sAccount ? esc(s.sAccount.broker_id + '-' + s.sAccount.account_id) : ''}</span></div>
@@ -217,7 +218,7 @@ function renderStkPos() {
     const mv = last * p.quantity * 1000, cost = p.price * p.quantity * 1000;
     const pnl = account.stockPnl(p);
     return { p, last, ref, mv, pnl, ret: cost ? (pnl / cost) * 100 : NaN, dayPct: (last / ref - 1) * 100,
-      dayPnl: fin(ref) ? sg * (last - ref) * p.quantity * 1000 : NaN, flash: x?.flash ?? 0, dir: x?.dir ?? 0 };
+      dayPnl: account.stockDayPnl(p), flash: x?.flash ?? 0, dir: x?.dir ?? 0 };
   });
   const totalMv = rows.reduce((a, r) => a + (fin(r.mv) ? r.mv : 0), 0);
   const now = performance.now();

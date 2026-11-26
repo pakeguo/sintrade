@@ -282,7 +282,7 @@ export class DemoBackend implements Backend {
       const tsmc = this.stockPx.get('2330') ?? 1450;
       return [
         { id: 0, code: '2330', direction: 'Buy', quantity: 2, price: 1380, last_price: tsmc, pnl: (tsmc - 1380) * 2000 },
-        { id: 1, code: '2884', direction: 'Buy', quantity: 10, price: 31.5, last_price: 30.2, pnl: (30.2 - 31.5) * 10000 },
+        { id: 1, code: '2884', direction: 'Buy', quantity: 10, price: 31.5, last_price: 30.2, pnl: (30.2 - 31.5) * 10000, yd_quantity: 6 },
       ] as T;
     }
     if (path === 'profit_loss') {

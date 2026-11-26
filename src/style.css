@@ -97,6 +97,7 @@ header {
 .kpis small { color: var(--muted); font-size: 11px; }
 .kv2 { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; padding: 2px 0; }
 .kv2 b { color: var(--text); font-weight: 600; }
+.kv2.sub { opacity: .7; border-top: 1px dashed var(--line); margin-top: 2px; padding-top: 3px; }
 .kv2 b.up { color: var(--up); } .kv2 b.down { color: var(--down); }
 .risk.ok { color: var(--down) !important; } .risk.warn { color: var(--accent) !important; }
 .risk.danger { color: #fff !important; background: #b42318; padding: 0 6px; border-radius: 4px; }
