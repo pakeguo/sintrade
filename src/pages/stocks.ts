@@ -13,6 +13,7 @@ import { store } from '../core/store';
 import { cls, compactMq, cssVar, esc, fin, fmt, fmtP, LS, sign, tpeToday, pointerHeld } from '../core/util';
 import type { Bar, Contract, Info, Tick } from '../types';
 import type { Page } from './page';
+import { limitZoom, resetZoom } from '../ui/zoom';
 
 const OWNER_WL = 'stocks-watch';
 const OWNER_CUR = 'stocks-current';
@@ -36,7 +37,7 @@ const TEMPLATE = `
     </div>
     <div id="live" class="stk-live">
       <div class="card lv-chart"><div class="ichart"><div id="ichart" class="fc-in"></div></div>
-        <div class="lgd"><i class="l-px"></i>成交價　<i class="l-vwap"></i>VWAP 均價　<span class="dash">- - </span>參考價</div></div>
+        <div class="lgd"><button id="izoom-reset" class="zoom-reset" title="回到 09:00–13:30 完整時段">⟲ 重置</button><i class="l-px"></i>成交價　<i class="l-vwap"></i>VWAP 均價　<span class="dash">- - </span>參考價</div></div>
       <div class="lv-side">
         <div class="card"><div class="ct">五檔</div><div id="sbook" class="book"></div></div>
         <div class="card"><div class="ct">內外盤<span class="tip" title="外盤：買方主動吃賣單成交；內盤：賣方主動砸買單成交">?</span></div><div id="inout"></div></div>
@@ -225,6 +226,8 @@ function initIntraday() {
     if (w > 0 && w !== lastW) { lastW = w; fitSession(); }
   });
   ichartRO.observe(document.getElementById('ichart')!);
+  limitZoom(ichart, () => ISESSION);
+  document.getElementById('izoom-reset')!.addEventListener('click', () => fitSession());
   // 注意：visible:false 的序列不會被算進時間軸，所以用「看得見但完全透明」的線
   axisLine = ichart.addSeries(LineSeries, {
     color: 'rgba(0,0,0,0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
@@ -264,9 +267,10 @@ function fitSession() {
     if (!ichart || !el) return;
     ichart.resize(el.clientWidth, el.clientHeight);
     // 兩端各留幾分鐘邊距，09:00、13:30 的時間標籤才不會被切掉
-    ichart.timeScale().setVisibleLogicalRange({ from: -6, to: 270 + 6 });
+    resetZoom(ichart, ISESSION);
   }));
 }
+const ISESSION = { from: -6, to: 270 + 6 }; // 09:00（第 0 點）–13:30（第 270 點），兩端留邊距
 
 function onTick(t: Tick) {
   if (t.code !== code) return;

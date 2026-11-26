@@ -366,6 +366,9 @@ table.tc td { padding: 3px 4px; } table.tc td.px { min-width: 54px; font-size: 1
 table.tc td.vol { min-width: 64px; width: 22%; }
 .tc-foot { display: flex; align-items: center; gap: 10px; font-size: 12px; padding-top: 6px; color: var(--muted); }
 .tc-foot button { padding: 3px 10px; font-size: 12px; }
+/* 分時圖重置縮放 */
+.zoom-reset { padding: 2px 8px; font-size: 11px; margin-right: 8px; }
+.ov-chart-card .zoom-reset { margin: 0 6px 0 0; }
 /* 問題偵測列 */
 .diag-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 50; max-width: 92vw; background: #5a1414; color: #ffd9d9;
   border: 1px solid #b42318; border-radius: 8px; padding: 8px 14px; font-size: 12px; line-height: 1.6; cursor: pointer; box-shadow: 0 8px 24px #000a; }

@@ -12,6 +12,7 @@ import { Heatmap } from '../ui/heatmap';
 import { section } from '../core/diag';
 import type { Bar } from '../types';
 import type { Page } from './page';
+import { limitZoom, resetZoom } from '../ui/zoom';
 
 const OWNER = 'overview';
 
@@ -29,6 +30,7 @@ const TEMPLATE = `
     <div class="card ov-chart-card">
       <div class="ct">走勢　<span class="lgd"><i class="l-ix"></i>加權　<i class="l-fut"></i><span id="ov-fut-name">台指期</span></span>
         <span id="ov-range" class="ov-range"></span>
+        <button id="ov-zoom-reset" class="zoom-reset" title="回到完整時段">⟲ 重置</button>
         <div class="seg ov-sess" id="ov-sess"><button data-s="day">日盤</button><button data-s="full">全時</button></div></div>
       <div id="ov-chart" class="ov-chart"></div>
     </div>
@@ -119,7 +121,9 @@ let ixLine: ISeriesApi<'Line'> | null = null;
 let futLine: ISeriesApi<'Line'> | null = null;
 let lastIxT = 0, lastFutT = 0;
 let axisLine: ISeriesApi<'Line'> | null = null;    // 透明線：每分鐘一個空白點撐出固定時間軸（pitfalls #14）
-let rangeLo = 0, rangeHi = 0;                       // 目前時間軸的起訖（台北時間當 UTC 的秒）
+let rangeLo = 0, rangeHi = 0;
+let axisN = 0;                                      // 時間軸點數（縮放限制與重置用）
+const fullRange = () => (axisN ? { from: -4, to: axisN - 1 + 4 } : null);                       // 目前時間軸的起訖（台北時間當 UTC 的秒）
 
 // ── 日盤／全時 ──
 // 日盤：08:45–13:45；全時：台灣券商期貨全盤日K起迄＝前一交易日 15:00 夜盤開盤 → 當日 13:45
@@ -187,6 +191,7 @@ async function loadChart() {
     label = `${+D.slice(5, 7)}/${+D.slice(8)} 08:45 → 13:45`;
   }
   rangeLo = axis[0]; rangeHi = axis[axis.length - 1];
+  axisN = axis.length;
   axisLine!.setData(axis.map((x) => ({ time: x as UTCTimestamp })));
   ixLine!.setData(ix.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
   futLine!.setData(fut.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
@@ -200,7 +205,7 @@ async function loadChart() {
     const el = document.getElementById('ov-chart');
     if (!chart || !el) return;
     chart.resize(el.clientWidth, el.clientHeight);
-    chart.timeScale().setVisibleLogicalRange({ from: -4, to: n - 1 + 4 });
+    resetZoom(chart, { from: -4, to: n - 1 + 4 });
   }));
 }
 
@@ -319,6 +324,8 @@ export const overviewPage: Page = {
     document.getElementById('ov-fut-name')!.textContent = hub.futName;
     initChart();
     heat = new Heatmap(document.getElementById('ov-heat')!);
+    limitZoom(chart!, fullRange);
+    document.getElementById('ov-zoom-reset')!.addEventListener('click', () => { const r = fullRange(); if (r && chart) resetZoom(chart, r); });
     components.use(OWNER);
     account.use(OWNER);
     hub.acquire(OWNER, { security_type: 'IND', exchange: 'OTC', code: 'IX0043' }, ['Quote']);
@@ -382,6 +389,6 @@ export const overviewPage: Page = {
     hub.releaseAll(OWNER);
     chart?.remove();
     heat?.destroy(); heat = null;
-    chart = null; ixLine = null; futLine = null; axisLine = null; lastIxT = 0; lastFutT = 0;
+    chart = null; ixLine = null; futLine = null; axisLine = null; axisN = 0; lastIxT = 0; lastFutT = 0;
   },
 };
