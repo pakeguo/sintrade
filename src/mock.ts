@@ -259,6 +259,8 @@ export class DemoBackend implements Backend {
 
   async recentTicks(): Promise<Tick[]> { return []; }
   async scanner(type: string, _asc: boolean, count: number): Promise<ScanRow[]> {
+    // &noscan=1：模擬收盤後永豐排行沒有資料（改用收盤快照排行）
+    if (new URLSearchParams(location.search).has('noscan')) return [];
     const all = [...STOCKS.map((s) => [s[0], s[1], s[4]] as const), ...EXTRA.map((s) => [s[0], s[1], 20 + (Number(s[0]) % 300)] as const)];
     const rows = all.map(([code, name, ref], i) => {
       const close = this.stockPx.get(code) ?? ref * (1 + Math.sin(i * 7.3) * 0.03);
