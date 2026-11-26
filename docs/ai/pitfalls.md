@@ -186,6 +186,16 @@ DEMO 預設有期權部位，所以測試沒觸發。
 - 雲端測試 phone-server 時 Node 內建 fetch 不吃代理 → 用 `NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt node phone-server.mjs`。
 - `openapi.twse.com.tw` 只有預告表（TWT48U_ALL），沒有歷史除權息，不能拿來還原。
 
+## 19. 期貨全時時間軸：窄圖被截斷、Math.min(...陣列) 爆堆疊
+
+- **症狀 1**：分析頁「累計淨買」小圖切到「全時」後，時間軸仍只顯示 09:00–12:00 一小段。
+  **根因**：lightweight-charts 預設 `timeScale.minBarSpacing = 0.5px`；全時時間軸有 1,140 點（15:01→05:00＋08:46→13:45），
+  小圖寬約 270px，`setVisibleLogicalRange` 被夾成最多約 540 點。**解法**：固定時間軸的圖都設 `minBarSpacing: 0.05`（分析頁兩張圖、總覽走勢圖）。
+- **症狀 2**：期貨／選擇權切到 K 線時 `RangeError: Maximum call stack size exceeded`（`volumeProfile`）。
+  **根因**：`Math.min(...bars.map(...))` 展開數十萬根 1 分 K（期貨一天約 1,140 根 × 200 天）超過參數上限。
+  **解法**：大陣列一律用迴圈求極值，不用展開運算子。
+- 期貨 N 分 K／日K 規則在 `core/session.ts`：日盤以 08:45、夜盤以 15:00 起算；日K＝全盤日K（夜盤歸下一交易日）。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

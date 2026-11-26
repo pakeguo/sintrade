@@ -2,6 +2,7 @@
 // shioaji kbars 只有 1 分 K（以結束時間標記）→ 自行彙整
 import { hub } from './hub';
 import { regroup, toDaily } from './indicators';
+import { dayStart, derivBucket, isDeriv, sessionDay } from './session';
 import { tpeToday } from './util';
 import type { Bar, Contract } from '../types';
 
@@ -31,15 +32,20 @@ export async function minuteBars(c: Contract, days: number): Promise<Bar[]> {
   return bars;
 }
 
-/** N 分 K：以 09:00 為起點每 N 分鐘一根，以結束時間標記（最後一根最晚 13:30） */
-export function aggregateMinutes(bars: Bar[], n: number): Bar[] {
+/** 現股 N 分 K：以 09:00 為起點每 N 分鐘一根，以結束時間標記（最後一根最晚 13:30） */
+function stockBucket(t1: number, n: number) {
+  const day = Math.floor(t1 / 86400) * 86400;
+  const m = Math.round((t1 - day) / 60);
+  const end = Math.min(13 * 60 + 30, 9 * 60 + Math.ceil((m - 9 * 60) / n) * n);
+  return day + Math.max(end, 9 * 60 + n) * 60;
+}
+
+/** N 分 K：現股以 09:00 為起點；期貨／選擇權日盤以 08:45、夜盤以 15:00 為起點（core/session.ts） */
+export function aggregateMinutes(bars: Bar[], n: number, deriv = false): Bar[] {
   if (n <= 1) return bars.map((b) => ({ ...b }));
   const out: Bar[] = [];
   for (const b of bars) {
-    const day = Math.floor(b.t / 86400) * 86400;
-    const m = Math.round((b.t - day) / 60);
-    const end = Math.min(13 * 60 + 30, 9 * 60 + Math.ceil((m - 9 * 60) / n) * n);
-    const t = day + Math.max(end, 9 * 60 + n) * 60;
+    const t = deriv ? derivBucket(b.t, n) ?? b.t : stockBucket(b.t, n);
     const last = out[out.length - 1];
     if (last && last.t === t) { last.h = Math.max(last.h, b.h); last.l = Math.min(last.l, b.l); last.c = b.c; last.v += b.v; }
     else out.push({ t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v });
@@ -48,24 +54,31 @@ export function aggregateMinutes(bars: Bar[], n: number): Bar[] {
 }
 
 export async function buildBars(c: Contract, iv: Interval): Promise<{ bars: Bar[]; minute: Bar[]; note?: string }> {
+  const deriv = isDeriv(c);
   const minute = await minuteBars(c, daysFor(iv));
-  if (isMinute(iv)) return { bars: aggregateMinutes(minute, minutesOf(iv)), minute };
-  const days = toDaily(minute);
+  if (isMinute(iv)) return { bars: aggregateMinutes(minute, minutesOf(iv), deriv), minute };
+  // 期貨／選擇權日K＝全盤日K（前一交易日夜盤＋當日日盤）
+  const days = toDaily(minute, deriv ? (t) => dayStart(sessionDay(t)) : undefined);
   if (iv === 'week' || iv === 'month') return { bars: regroup(days, iv), minute };
   return { bars: days, minute };
 }
 
 /** 即時成交 → 更新（或新增）最後一根 K 棒；回傳是否有變動。規則與 aggregateMinutes／toDaily／regroup 一致 */
-export function applyTick(bars: Bar[], iv: Interval, t: number, price: number, vol: number): boolean {
+export function applyTick(bars: Bar[], iv: Interval, t: number, price: number, vol: number, deriv = false): boolean {
   if (!Number.isFinite(price) || price <= 0) return false;
-  const day = Math.floor(t / 86400) * 86400;
-  const m1 = Math.ceil((t - day) / 60);                       // 1 分 K 以結束時間標記
-  if (m1 < 9 * 60 || m1 > 13 * 60 + 30 + 1) return false;      // 只處理現股交易時段
+  const t1 = Math.ceil(t / 60) * 60;                          // 1 分 K 以結束時間標記
+  let day = Math.floor(t / 86400) * 86400;
+  if (deriv) {
+    if (derivBucket(t1, 1) == null) return false;              // 期貨／選擇權休市時段
+    day = dayStart(sessionDay(t1));
+  } else {
+    const m1 = (t1 - day) / 60;
+    if (m1 < 9 * 60 || m1 > 13 * 60 + 30 + 1) return false;    // 只處理現股交易時段
+  }
   let key: number;
   if (isMinute(iv)) {
     const n = minutesOf(iv);
-    const end = Math.min(13 * 60 + 30, 9 * 60 + Math.ceil((m1 - 9 * 60) / n) * n);
-    key = day + Math.max(end, 9 * 60 + n) * 60;
+    key = deriv ? derivBucket(t1, n)! : stockBucket(t1, n);
   } else if (iv === 'week') {
     key = day - ((new Date(day * 1000).getUTCDay() + 6) % 7) * 86400;
   } else if (iv === 'month') {

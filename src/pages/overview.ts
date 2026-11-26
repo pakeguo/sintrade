@@ -7,6 +7,7 @@ import { account } from '../core/account';
 import { components } from '../core/components';
 import { hub } from '../core/hub';
 import { computeMetrics, type Expiry, loadTxoExpiries, pcrLabel, skewLabel } from '../core/optchain';
+import { dayStart, dstr, isDayBar, minOf, sessionDay, shiftWeekday } from '../core/session';
 import { cls, cssVar, esc, fin, fmt, session, sign, tpeToday, pointerHeld } from '../core/util';
 import { Heatmap } from '../ui/heatmap';
 import { section } from '../core/diag';
@@ -132,22 +133,6 @@ const autoSess = (): Sess => (session() === 'night' ? 'full' : 'day');
 let sess: Sess = autoSess();
 let manualSess = false;
 
-const dstr = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
-const minOf = (t: number) => { const d = new Date(t * 1000); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
-const dayStart = (date: string) => Date.parse(date + 'T00:00:00Z') / 1000;
-function shiftWeekday(date: string, dir: 1 | -1) {
-  let x = dayStart(date);
-  do { x += dir * 86400; } while ([0, 6].includes(new Date(x * 1000).getUTCDay()));
-  return dstr(x);
-}
-/** K 棒屬於哪個交易日：15:00 後的夜盤算下一個平日；週六凌晨（週五夜盤延續）算下週一 */
-function sessionDay(t: number) {
-  const d = dstr(t), m = minOf(t);
-  if (m >= 15 * 60) return shiftWeekday(d, 1);
-  if (m <= 5 * 60 && new Date(t * 1000).getUTCDay() === 6) return shiftWeekday(d, 1);
-  return d;
-}
-const isDayBar = (t: number) => { const m = minOf(t); return m >= 8 * 60 + 46 && m <= 13 * 60 + 45; };
 
 function initChart() {
   const el = document.getElementById('ov-chart')!;
@@ -156,7 +141,8 @@ function initChart() {
     layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 11 },
     grid: { vertLines: { color: cssVar('--grid') }, horzLines: { color: cssVar('--grid') } },
     rightPriceScale: { borderVisible: false },
-    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+    // 全時 1,140 點：預設最小間距 0.5px 在窄圖會截斷可視範圍（pitfalls #19）
+    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, minBarSpacing: 0.05 },
     crosshair: { mode: 0 },
   });
   // 注意：visible:false 的序列不算進時間軸 → 用透明線（pitfalls #14）

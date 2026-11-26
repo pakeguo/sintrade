@@ -1,11 +1,11 @@
 // 技術指標與 K 棒彙整（純函式）
 import type { Bar } from '../types';
 
-/** 1 分 K → 日 K（以台北日期分組） */
-export function toDaily(bars: Bar[]): Bar[] {
+/** 1 分 K → 日 K（預設以台北日期分組；期貨可傳入交易日的分組方式） */
+export function toDaily(bars: Bar[], dayOf: (t: number) => number = (t) => Math.floor(t / 86400) * 86400): Bar[] {
   const out: Bar[] = [];
   for (const b of bars) {
-    const day = Math.floor(b.t / 86400) * 86400;
+    const day = dayOf(b.t);
     const last = out[out.length - 1];
     if (last && last.t === day) {
       last.h = Math.max(last.h, b.h); last.l = Math.min(last.l, b.l); last.c = b.c; last.v += b.v;
@@ -80,7 +80,9 @@ export function vwap(bars: Bar[]): number[] {
 /** 分價量表：把每分 K 的量分配到價格區間 */
 export function volumeProfile(bars: Bar[], bins = 28) {
   if (!bars.length) return { rows: [] as { lo: number; hi: number; v: number }[], poc: NaN };
-  const lo = Math.min(...bars.map((b) => b.l)), hi = Math.max(...bars.map((b) => b.h));
+  // 不用 Math.min(...陣列)：期貨多日 1 分 K 可達數十萬根，展開參數會爆堆疊（pitfalls #19）
+  let lo = Infinity, hi = -Infinity;
+  for (const b of bars) { if (b.l < lo) lo = b.l; if (b.h > hi) hi = b.h; }
   const step = (hi - lo) / bins || 1;
   const rows = Array.from({ length: bins }, (_, i) => ({ lo: lo + i * step, hi: lo + (i + 1) * step, v: 0 }));
   for (const b of bars) {

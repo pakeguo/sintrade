@@ -1,7 +1,7 @@
 // 商品頁（需求：docs/ai/requirements.md 第 8 輪）
 //   左：商品報價小卡（個股＋期貨）。固定頁籤「庫存」「期貨（微台近月／次月）」＋自訂頁籤（與自選群組共用、電腦手機同步）
 //   右：選擇權 T 字報價（小卡選結算日）
-//   點小卡 → openTA()（之後換成技術分析窗口）
+//   雙擊小卡、點 T 字報價的價格 → openTA()：跳到分析頁（個股開 K 線、期貨／選擇權開盤中走勢）
 import { account } from '../core/account';
 import { hub, keyOf } from '../core/hub';
 import { openTA } from '../core/nav';

@@ -100,6 +100,9 @@ export class DemoBackend implements Backend {
     if (code === 'TXFR1') return { security_type: 'FUT', exchange: 'TAIFEX', code: 'TXFR1', target_code: this.futCode };
     if (code.startsWith('IX')) return { security_type: 'IND', exchange: code === 'IX0043' ? 'OTC' : 'TSE', code };
     if (/^\d{4,6}[A-Z]?$/.test(code)) return { security_type: 'STK', exchange: 'TSE', code };
+    const fm = code.match(/^(TXF|MXF|TMF)[A-L]\d$/);
+    if (fm) return (await this.futuresList(fm[1])).find((f) => f.code === code) ?? { security_type: 'FUT', exchange: 'TAIFEX', code };
+    if (!this.chains.size) for (const r of ['TXO', 'TX4', 'TXU']) await this.optionChain(r);
     for (const ch of this.chains.values()) { const o = ch.find((x) => x.code === code); if (o) return o; }
     throw new Error('DEMO 找不到商品 ' + code);
   }
@@ -164,7 +167,7 @@ export class DemoBackend implements Backend {
     const l = this.get(c);
     if (!l) return [];
     if ((l.c.security_type === 'STK' || l.c.security_type === 'IND') && from && to) return this.stockBars(l, from, to);
-    if (l.c.security_type === 'FUT' && from && to) return this.futBars(l, from, to);
+    if ((l.c.security_type === 'FUT' || l.c.security_type === 'OPT') && from && to) return this.futBars(l, from, to);
     const now = tpeNow();
     const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000;
     const start = day + (8 * 60 + 46) * 60;
@@ -198,11 +201,13 @@ export class DemoBackend implements Backend {
     const ts = times.filter((x) => x <= nowS).sort((a, b) => a - b);
     const out: Bar[] = [];
     let p = l.last;
-    const vol = p * 0.0004;
+    // 選擇權：價格小、波動大，四捨五入到 0.1 並不低於 0.1
+    const rd = l.opt ? (x: number) => Math.max(0.1, Math.round(x * 10) / 10) : Math.round;
     for (let i = ts.length - 1; i >= 0; i--) {
-      const o = p - (Math.random() - 0.5) * vol * 2;
-      out.push({ t: ts[i], o: Math.round(o), h: Math.round(Math.max(o, p) + Math.random() * vol), l: Math.round(Math.min(o, p) - Math.random() * vol),
-        c: Math.round(p), v: Math.floor(Math.random() ** 2 * 900) + 5 });
+      const vol = l.opt ? Math.max(0.3, p * 0.004) : p * 0.0004;
+      const o = l.opt ? Math.max(0.1, p - (Math.random() - 0.5 + (p - l.ref) / l.ref * 0.02) * vol * 2) : p - (Math.random() - 0.5) * vol * 2;
+      out.push({ t: ts[i], o: rd(o), h: rd(Math.max(o, p) + Math.random() * vol), l: rd(Math.min(o, p) - Math.random() * vol),
+        c: rd(p), v: Math.floor(Math.random() ** 2 * (l.opt ? 300 : 900)) + 5 });
       p = o;
     }
     return out.reverse();
@@ -240,10 +245,13 @@ export class DemoBackend implements Backend {
     if (!l) return [];
     const now = tpeNow();
     const d0 = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000;
-    const endT = Math.min(nowSec(), d0 + 13 * 3600 + 30 * 60);
+    const deriv = l.c.security_type === 'FUT' || l.c.security_type === 'OPT';
+    // 期貨／選擇權：從現在往回產生（不限日盤時段，畫面會依時間軸過濾）
+    const endT = deriv ? nowSec() : Math.min(nowSec(), d0 + 13 * 3600 + 30 * 60);
+    const startT = deriv ? endT - 20 * 3600 : d0 + 9 * 3600;
     const out: Tick[] = [];
     let p = l.last;
-    for (let t = endT; t > d0 + 9 * 3600 && out.length < 1500; t -= 2 + Math.floor(Math.random() * 20)) {
+    for (let t = endT; t > startT && out.length < 1500; t -= 2 + Math.floor(Math.random() * (deriv ? 40 : 20))) {
       const big = Math.random() < 0.02;
       const vol = big ? 20 + Math.floor(Math.random() * 400) : 1 + Math.floor(Math.random() ** 3 * 30);
       out.unshift({ code: l.c.code, t, price: p, vol, totalVol: NaN, side: Math.random() > 0.48 ? 1 : 2 });
