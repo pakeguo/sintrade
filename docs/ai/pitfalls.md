@@ -131,6 +131,7 @@ DEMO 更新慢、Playwright 的 `click()` 瞬間完成，所以測試沒抓到�
 - 權重（%）＝ 貢獻點數 × 10⁴ ÷（加權指數參考價 × 加權漲跌幅%）；|漲跌幅| < 0.15% 時誤差大，沿用上次值。
 - 以 0.7/0.3 平滑並存在 localStorage `mw.sectorWeights`；有官方權重時優先使用官方值。
 - DEMO 用 `&noweight=1` 模擬「收不到權重」。
+- 畫面上的診斷列已於 2026-11-26 使用者確認後移除；`components.diag` 計數與 Console 的 `[類股串流] 第一筆` 仍保留，需要時可在 Console 輸入檢查。
 
 **通則**：shioaji 加值串流的某些 metric 可能實盤不推送或頻率很低，不要讓整個元件依賴單一 metric。
 
