@@ -261,6 +261,13 @@ DEMO 預設有期權部位，所以測試沒觸發。
 - 原因：帳務頁原本用即時價自己算「價差」（未扣手續費、證交稅），下單頁照使用者公式扣了費稅；兩者差額＝費稅總額（2 張台積電約 1.7 萬），看起來像算錯。
 - 使用者要求：API 有的損益直接用 API（`account.stockPnl/futPnl` 直接回傳 `p.pnl`），程式只算 API 沒有的（今日損益、試算、兩平價）；試算以 API 值為錨點，確保在 API 報價上兩邊一致。
 
+## 28. lightweight-charts 十字線同步的坑
+
+- `setCrosshairPosition()` 會**非同步**觸發該圖的 `subscribeCrosshairMove`，同步旗標擋不住 → 三張圖互相觸發、查價框計時一直被重設。
+  解法：事件有 `point` 但沒有 `sourceEvent`（程式觸發）就略過。
+- 即時資料 `setData` 也會觸發十字線事件（滑鼠沒動）→ 同一根 K 棒、位置差 < 4px 時不重設查價框。
+- `CrosshairMode.Magnet` 吸附「最近的序列值」，主圖有均線時常吸到均線；要錨定收盤價需關掉內建水平線、自己用 `createPriceLine` 畫。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：

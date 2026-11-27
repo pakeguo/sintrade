@@ -748,3 +748,10 @@ table.chain { width: 100%; border-collapse: collapse; }
 .td-p { cursor: pointer; }
 @media (max-width: 1400px) { .td-top { grid-template-columns: 1fr 1fr; } }
 .ta-st { margin-left: 14px; font-size: 12px; } .ta-st.note { color: var(--up); }
+/* 技術分析：停留查價框（不攔截滑鼠） */
+.ta-tip { position: absolute; z-index: 5; pointer-events: none; background: rgba(22,27,34,.94); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; min-width: 132px; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.ta-tip[hidden] { display: none; }
+.ta-tip-h { color: var(--muted); margin-bottom: 3px; }
+.ta-tip > div:not(.ta-tip-h) { display: flex; justify-content: space-between; gap: 14px; line-height: 1.5; }
+.ta-tip span { color: var(--muted); } .ta-tip b { font-weight: 600; }

@@ -1,12 +1,14 @@
 // 技術分析畫面：1 主圖（K 棒＋成交量＋疊加指標）＋ 2 副圖
 // 指標設定在「⚙ 指標」獨立視窗編輯（比照報價頁的選股視窗），設定存 localStorage `mw.taCfg`
 // 即時：update(bars) 只更新資料，不重建圖表、不動使用者的縮放位置
+// 查價：十字線水平線吸附在收盤價；滑鼠停留約 0.5 秒顯示該根 K 棒的開高低收；
+//       十字線（垂直線）同步延伸到兩個副圖，各圖圖例顯示滑鼠所在那根的指標數值
 import {
-  CandlestickSeries, ColorType, createChart, HistogramSeries, LineSeries, LineStyle,
-  type IChartApi, type ISeriesApi, type UTCTimestamp,
+  CandlestickSeries, ColorType, createChart, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
+  type IChartApi, type IPriceLine, type ISeriesApi, type MouseEventParams, type Time, type UTCTimestamp,
 } from 'lightweight-charts';
 import { findInd, INDICATORS, type Line } from '../core/ta';
-import { cssVar, esc, fin, fmtP, LS } from '../core/util';
+import { cls, cssVar, esc, fin, fmt, fmtP, LS, sign } from '../core/util';
 import type { Bar } from '../types';
 
 interface Pick { id: string; params: number[] }
@@ -28,6 +30,13 @@ export class TAView {
   private bars: Bar[] = [];
   private minute = false;
   private ro: ResizeObserver;
+  private lines: Line[][] = [[], [], []];        // 各圖的指標線（圖例與十字線同步用）
+  private idxOf = new Map<number, number>();     // K 棒時間 → 索引
+  private syncing = false;
+  private tipTimer: ReturnType<typeof setTimeout> | undefined;
+  private tip: HTMLElement | null = null;
+  private hover: { idx: number; x: number; y: number; src: number } | null = null;  // 目前滑鼠所在的 K 棒
+  private closeLine: IPriceLine | null = null;  // 查價線：錨定在滑鼠所在 K 棒的收盤價
   private modal: HTMLElement | null = null;
   private mTab: 'main' | 'sub0' | 'sub1' = 'main';
 
@@ -72,13 +81,15 @@ export class TAView {
       grid: { vertLines: { color: cssVar('--grid') }, horzLines: { color: cssVar('--grid') } },
       rightPriceScale: { borderVisible: false, minimumWidth: 72 },
       timeScale: { borderVisible: false, timeVisible: this.minute, secondsVisible: false },
-      crosshair: { mode: 0 },
+      // 主圖：內建水平線關掉，改由程式在「收盤價」畫一條查價線（Magnet 會吸到最近的均線，不一定是收盤價）
+      crosshair: sub ? { mode: CrosshairMode.Normal } : { mode: CrosshairMode.Normal, horzLine: { visible: false, labelVisible: false } },
       ...(sub ? { handleScroll: false, handleScale: false } : {}),
     } as const;
   }
 
   /** 依目前設定建立 3 個圖表與所有序列（不放資料） */
   private build() {
+    this.hideTip(); this.tip?.remove(); this.tip = null;
     this.panes.forEach((p) => p.chart.remove());
     this.panes = [];
     const up = cssVar('--up'), dn = cssVar('--down');
@@ -93,6 +104,8 @@ export class TAView {
     const el0 = this.host.querySelector<HTMLElement>('#ta-c0')!;
     const main = createChart(el0, this.opts(el0, false));
     this.candle = main.addSeries(CandlestickSeries, { upColor: up, downColor: dn, borderVisible: false, wickUpColor: up, wickDownColor: dn });
+    this.closeLine = this.candle.createPriceLine({ price: 0, color: cssVar('--accent'), lineStyle: LineStyle.Dashed, lineWidth: 1,
+      lineVisible: false, axisLabelVisible: false, title: '收' });
     this.vol = main.addSeries(HistogramSeries, { priceScaleId: 'v', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
     main.priceScale('v').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     const ms: S[] = [];
@@ -108,6 +121,84 @@ export class TAView {
       this.panes.push({ chart: ch, series: ss });
     }
     main.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (r) this.panes.slice(1).forEach((p) => p.chart.timeScale().setVisibleLogicalRange(r)); });
+    // 十字線同步：任何一張圖移動滑鼠，其他兩張在同一根 K 棒畫出十字線，圖例顯示該根的數值
+    this.panes.forEach((p, i) => p.chart.subscribeCrosshairMove((e) => this.onCross(i, e)));
+    this.tip = document.createElement('div');
+    this.tip.className = 'ta-tip';
+    this.tip.hidden = true;
+    el0.append(this.tip);
+  }
+
+  private onCross(src: number, e: MouseEventParams<Time>) {
+    if (this.syncing) return;
+    // 程式呼叫 setCrosshairPosition 也會（非同步）觸發這個事件，沒有 sourceEvent → 略過，避免三張圖互相觸發
+    if (e.point && !e.sourceEvent) return;
+    const idx = e.time != null ? this.idxOf.get(e.time as number) : undefined;
+    // 即時資料更新也會觸發這個事件：滑鼠沒換到別根 K 棒就不重設查價框的計時
+    const same = idx !== undefined && e.point && this.hover && this.hover.idx === idx && this.hover.src === src
+      && Math.abs(this.hover.x - e.point.x) < 4 && Math.abs(this.hover.y - e.point.y) < 4;
+    if (same) return;
+    this.hideTip();
+    if (idx === undefined || !e.point) {
+      this.hover = null;
+      this.closeLine?.applyOptions({ lineVisible: false, axisLabelVisible: false });
+      this.syncing = true;
+      this.panes.forEach((p, i) => { if (i !== src) p.chart.clearCrosshairPosition(); });
+      this.syncing = false;
+      this.renderLegends(undefined);
+      return;
+    }
+    const t = this.bars[idx].t as UTCTimestamp;
+    this.syncing = true;
+    this.panes.forEach((p, i) => {
+      if (i === src) return;
+      if (i === 0) { if (this.candle) p.chart.setCrosshairPosition(this.bars[idx].c, t, this.candle); return; }
+      const j = this.lines[i].findIndex((l) => fin(l.data[idx]));      // 副圖水平線放在第一條有值的指標上
+      const s = p.series[j >= 0 ? j : 0];
+      if (s) p.chart.setCrosshairPosition(j >= 0 ? this.lines[i][j].data[idx] : 0, t, s);
+    });
+    this.syncing = false;
+    this.hover = { idx, x: e.point.x, y: e.point.y, src };
+    this.closeLine?.applyOptions({ price: this.bars[idx].c, lineVisible: true, axisLabelVisible: true });
+    this.renderLegends(idx);
+    // 停留 0.5 秒顯示這根 K 棒的詳細資訊（只在主圖）
+    if (src === 0) this.tipTimer = setTimeout(() => this.showTip(idx, e.point!.x, e.point!.y), 500);
+  }
+
+  private hideTip() { clearTimeout(this.tipTimer); if (this.tip) this.tip.hidden = true; }
+  private showTip(i: number, x: number, y: number) {
+    const tip = this.tip, b = this.bars[i];
+    if (!tip || !b) return;
+    const prev = this.bars[i - 1]?.c ?? b.o;
+    const ch = b.c - prev, amp = prev ? ((b.h - b.l) / prev) * 100 : NaN;
+    const d = new Date(b.t * 1000).toISOString();
+    const when = this.minute ? `${d.slice(5, 10).replace('-', '/')} ${d.slice(11, 16)}` : d.slice(0, 10).replace(/-/g, '/');
+    const row = (k: string, v: string, c = '') => `<div><span>${k}</span><b class="${c}">${v}</b></div>`;
+    tip.innerHTML = `<div class="ta-tip-h">${when}</div>
+      ${row('開', fmtP(b.o), cls(b.o - prev))}${row('高', fmtP(b.h), cls(b.h - prev))}${row('低', fmtP(b.l), cls(b.l - prev))}${row('收', fmtP(b.c), cls(ch))}
+      ${row('漲跌', `${sign(ch, b.c < 100 ? 2 : 1)}（${prev ? sign((ch / prev) * 100, 2) : '—'}%）`, cls(ch))}${row('振幅', fin(amp) ? amp.toFixed(2) + '%' : '—')}${row('量', fmt(b.v))}`;
+    tip.hidden = false;
+    const host = tip.parentElement!;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = `${x + 16 + w > host.clientWidth - 72 ? Math.max(4, x - w - 16) : x + 16}px`;
+    tip.style.top = `${Math.min(Math.max(4, y - h / 2), host.clientHeight - h - 4)}px`;
+  }
+
+  /** 圖例：idx 有值時顯示滑鼠所在那根，否則顯示最後一根 */
+  private renderLegends(idx: number | undefined) {
+    const b = this.bars;
+    if (!b.length) return;
+    const at = idx ?? b.length - 1;
+    const fmtv = (v: number) => (Math.abs(v) >= 1e6 ? (v / 1e4).toFixed(0) + '萬' : (v < 0 ? '−' : '') + fmtP(Math.abs(v)));
+    const titles = [`收 ${fmtP(b[at].c)}`, label(this.cfg.sub[0]), label(this.cfg.sub[1])];
+    this.lines.forEach((lines, i) => {
+      const el = this.host.querySelector(`#ta-l${i}`);
+      if (!el) return;
+      el.innerHTML = `<b>${esc(titles[i])}</b>` + lines.filter((l) => l.name !== '量').map((l) => {
+        const v = idx === undefined ? [...l.data].reverse().find(fin) : l.data[at];
+        return `<span style="color:${l.color || 'var(--text)'}">${esc(l.name)} ${v === undefined || !fin(v) ? '—' : fmtv(v)}</span>`;
+      }).join('');
+    });
   }
 
   /** 計算指標並放入資料；reset=true 時把可視範圍設到最近 120 根 */
@@ -122,13 +213,7 @@ export class TAView {
           ? { time: T(i), value: v, color: l.name === '量' ? (b[i].c >= b[i].o ? upA : dnA) : v >= 0 ? up : dn } : { time: T(i) })));
       } else (s as ISeriesApi<'Line'>).setData(l.data.map((v, i) => (fin(v) ? { time: T(i), value: v } : { time: T(i) })));
     };
-    const fmtv = (v: number) => (Math.abs(v) >= 1e6 ? (v / 1e4).toFixed(0) + '萬' : (v < 0 ? '−' : '') + fmtP(Math.abs(v)));
-    const lgd = (i: number, title: string, lines: Line[]) => {
-      this.host.querySelector(`#ta-l${i}`)!.innerHTML = `<b>${esc(title)}</b>` + lines.filter((l) => l.name !== '量').map((l) => {
-        const v = [...l.data].reverse().find(fin);
-        return `<span style="color:${l.color || 'var(--text)'}">${esc(l.name)} ${v === undefined ? '—' : fmtv(v)}</span>`;
-      }).join('');
-    };
+    this.idxOf = new Map(b.map((x, i) => [x.t, i]));
 
     this.candle.setData(b.map((x) => ({ time: x.t as UTCTimestamp, open: x.o, high: x.h, low: x.l, close: x.c })));
     this.vol!.setData(b.map((x) => ({ time: x.t as UTCTimestamp, value: x.v, color: x.c >= x.o ? upA : dnA })));
@@ -138,13 +223,14 @@ export class TAView {
       const d = findInd(p.id); if (!d) continue;
       for (const l of b.length ? d.calc(b, paramsOf(p)) : []) { const s = this.panes[0].series[k++]; if (s) put(s, l); mainLines.push(l); }
     }
-    lgd(0, b.length ? `收 ${fmtP(b[b.length - 1].c)}` : '主圖', mainLines);
+    this.lines[0] = mainLines;
     for (const i of [0, 1]) {
       const p = this.cfg.sub[i], d = findInd(p.id);
       const lines = d && b.length ? d.calc(b, paramsOf(p)) : [];
       lines.forEach((l, j) => { const s = this.panes[i + 1].series[j]; if (s) put(s, l); });
-      lgd(i + 1, label(p), lines);
+      this.lines[i + 1] = lines;
     }
+    this.renderLegends(this.hover?.idx);   // 滑鼠停在圖上時，即時更新不要把圖例跳回最後一根
     if (reset) {
       const n = b.length;
       this.panes[0].chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 120), to: n + 2 });
@@ -225,6 +311,7 @@ export class TAView {
   }
 
   destroy() {
+    this.hideTip();
     this.closeModal();
     this.ro.disconnect();
     this.panes.forEach((p) => p.chart.remove());
