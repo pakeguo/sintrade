@@ -249,6 +249,13 @@ DEMO 預設有期權部位，所以測試沒觸發。
 - 逃生口：網址加 `?reset=1`（例：`http://127.0.0.1:8080/apps/mywatch/?reset=1`）清掉分析／下單頁記住的商品、模式、指標設定與 K 棒快取並回總覽。
 - 頁面卡死時：`Shift+Esc` 開 Chrome 工作管理員結束該分頁。
 
+## 26. 批次檔（.bat）注意事項
+
+- `cmd` 執行 .bat 是邊讀邊執行；`2-更新伺服器.bat` 會 `git pull`，若改到它自己會讀錯行 → 先把自己複製到 `%TEMP%` 再執行（`--run` 參數）。
+- 換行必須 CRLF：`.gitattributes` 設 `*.bat text eol=crlf`。檔案為 UTF-8，開頭 `chcp 65001` 才能正確顯示中文。
+- `( … )` 區塊內的 echo 不能有半形右括號 `)`，會提早結束區塊；中文說明一律用全形括號。
+- 在 .bat 裡呼叫 npm 要寫 `call npm.cmd …`，否則 npm 結束後整個 bat 也跟著結束。
+
 ## 8. IV 與 e-Leader 不同（不是 bug）
 
 - 價格已與 e-Leader 比對一致。差異來自算法：
