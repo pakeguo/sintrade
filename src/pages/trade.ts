@@ -13,6 +13,7 @@ import {
 import { account } from '../core/account';
 import { catalog } from '../core/catalog';
 import { TIER, TIER_COLOR, tierOf } from '../core/flow';
+import { attachIntradayTools, INTRADAY_CROSSHAIR } from '../ui/intraday';
 import { hub } from '../core/hub';
 import { dayStart, dstr } from '../core/session';
 import {
@@ -323,6 +324,7 @@ let ichart: IChartApi | null = null;
 let pxLine: ISeriesApi<'Line'> | null = null, vwLine: ISeriesApi<'Line'> | null = null, axisLine: ISeriesApi<'Line'> | null = null;
 let ivol: ISeriesApi<'Histogram'> | null = null;
 let refSet = false;
+let itools: ReturnType<typeof attachIntradayTools> | null = null;
 let dayBars: Bar[] = [];
 let pv = 0, vv = 0;
 let fchart: IChartApi | null = null;
@@ -347,12 +349,14 @@ const fit = (ch: IChartApi | null, id: string) => requestAnimationFrame(() => re
 }));
 
 function initCharts() {
-  ichart = createChart(document.getElementById('td-ichart')!, { ...base(), rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.06 } }, handleScroll: false, handleScale: false });
+  ichart = createChart(document.getElementById('td-ichart')!, { ...base(), ...INTRADAY_CROSSHAIR,
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.06 } }, handleScroll: false, handleScale: false });
   axisLine = ichart.addSeries(LineSeries, { color: 'rgba(0,0,0,0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
   pxLine = ichart.addSeries(LineSeries, { color: '#c9d1d9', lineWidth: 2, priceLineVisible: false });
   vwLine = ichart.addSeries(LineSeries, { color: cssVar('--accent'), lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
   ivol = ichart.addSeries(HistogramSeries, { priceScaleId: 'v', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
   ichart.priceScale('v').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+  itools = attachIntradayTools(ichart, pxLine, () => dayBars);   // 查價線錨定該分鐘成交價、最高／最低標示（與分析頁相同）
   fchart = createChart(document.getElementById('td-fchart')!, { ...base(false), rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.1 } },
     localization: { priceFormatter: (v: number) => (Math.abs(v) >= 1e8 ? (v / 1e8).toFixed(1) + '億' : Math.round(v / 1e4).toLocaleString() + '萬') },
     handleScroll: false, handleScale: false });
@@ -374,6 +378,7 @@ function setIntraday(bars: Bar[]): string {
   vv = dayBars.reduce((s, b) => s + b.v, 0);
   let cpv = 0, cvv = 0;
   pxLine?.setData(dayBars.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
+  itools?.update(true);
   vwLine?.setData(dayBars.map((b) => { cpv += ((b.h + b.l + b.c) / 3) * b.v; cvv += b.v; return { time: b.t as UTCTimestamp, value: cvv ? cpv / cvv : b.c }; }));
   ivol?.setData(dayBars.map((b) => ({ time: b.t as UTCTimestamp, value: b.v, color: b.c >= b.o ? cssVar('--up-a') : cssVar('--down-a') })));
   const axis = [];
@@ -396,6 +401,7 @@ function onTick(t: Tick) {
   bar.h = Math.max(bar.h, t.price); bar.l = Math.min(bar.l, t.price); bar.c = t.price; bar.v += t.vol;
   pv += t.price * t.vol; vv += t.vol;
   pxLine?.update({ time: b as UTCTimestamp, value: t.price });
+  itools?.update();
   if (vv) vwLine?.update({ time: b as UTCTimestamp, value: pv / vv });
   ivol?.update({ time: b as UTCTimestamp, value: bar.v, color: bar.c >= bar.o ? cssVar('--up-a') : cssVar('--down-a') });
 }
@@ -609,7 +615,7 @@ export const tradePage: Page = {
     account.unuse(OWNER);
     ROS.splice(0).forEach((r) => r.disconnect());
     ichart?.remove(); fchart?.remove();
-    ichart = fchart = null; pxLine = vwLine = axisLine = fAxis = null; ivol = null; fLines = [];
+    ichart = fchart = null; itools = null; pxLine = vwLine = axisLine = fAxis = null; ivol = null; fLines = [];
     contract = null; code = '';
   },
 };

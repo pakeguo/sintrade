@@ -55,6 +55,8 @@ src/
     blueprint.ts     藍圖頁產生器
   ui/
     （core/session.ts：交易時段工具——交易日歸屬、期貨 N 分 K 起點；core/nav.ts：openTA() 跳分析頁、derivName() 期權簡稱）
+    intraday.ts      分時走勢查價工具（查價線錨定該分鐘成交價、當日最高／最低標示），分析頁與下單頁共用
+    chartfmt.ts      圖表時間軸中文格式
     taview.ts        技術分析畫面：1 主（K＋量＋疊加）2 副，指標與參數存 localStorage `mw.taCfg`
     picker.ts        報價頁搜尋列（代碼／名稱）＋「選股」視窗（類股、成交量前 50、成交值前 50（收盤後改用全市場快照）、外資／投信買超與賣超），加入到自選群組
     tchain.ts        精簡 T 字報價元件（結算日小卡、指標列、價平 ±N 檔）

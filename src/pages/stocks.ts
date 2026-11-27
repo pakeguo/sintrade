@@ -4,8 +4,8 @@
 //       K線模式（分／日／週／月 K、MA、布林、RSI、分價量表）、技術分析（1 主 2 副）
 //   個股、期貨、選擇權共用同一套畫面；期貨／選擇權的時間軸依日盤／夜盤（core/session.ts）
 import {
-  CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle,
-  type IChartApi, type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type SeriesMarker, type Time, type UTCTimestamp,
+  CandlestickSeries, ColorType, createChart, HistogramSeries, LineSeries, LineStyle,
+  type IChartApi, type IPriceLine, type ISeriesApi, type UTCTimestamp,
 } from 'lightweight-charts';
 import { account } from '../core/account';
 import { hub } from '../core/hub';
@@ -20,6 +20,7 @@ import type { Page } from './page';
 import { applyTick, buildBars, INTERVALS, isMinute, labelOf, type Interval } from '../core/bars';
 import { TAView } from '../ui/taview';
 import { zhTimeOptions } from '../ui/chartfmt';
+import { attachIntradayTools, INTRADAY_CROSSHAIR } from '../ui/intraday';
 import { TIER, TIER_COLOR, tierOf } from '../core/flow';
 import { limitZoom, resetZoom } from '../ui/zoom';
 
@@ -346,38 +347,8 @@ function chartOpts() {
 let refPx = NaN;                                // 參考價：分時圖價格軸以它為中心上下對稱
 let axisLine: ISeriesApi<'Line'> | null = null;
 let ichartRO: ResizeObserver | null = null;
-let ixOverlay: ISeriesApi<'Line'> | null = null;
-let hoverLine: IPriceLine | null = null;
-let hlMarkers: ISeriesMarkersPluginApi<Time> | null = null;
-let hlKey = '';
-let hiLine: IPriceLine | null = null, loLine: IPriceLine | null = null;  // 最高／最低價的水平線（價格軸上標示）
-/** dayBars（依時間排序）中找某一分鐘的 K 棒 */
-function barAt(t: number): Bar | undefined {
-  let lo = 0, hi = dayBars.length - 1;
-  while (lo <= hi) { const m = (lo + hi) >> 1, x = dayBars[m].t; if (x === t) return dayBars[m]; if (x < t) lo = m + 1; else hi = m - 1; }
-  return undefined;
-}
-/** 在分時圖標出當日最高價與最低價（出現的那一分鐘）；有變動才重設 */
-function updateHL() {
-  if (!hlMarkers || !dayBars.length) {
-    hlMarkers?.setMarkers([]); hlKey = '';
-    hiLine?.applyOptions({ lineVisible: false, axisLabelVisible: false }); loLine?.applyOptions({ lineVisible: false, axisLabelVisible: false });
-    return;
-  }
-  let hi = dayBars[0], lo = dayBars[0];
-  for (const b of dayBars) { if (b.h > hi.h) hi = b; if (b.l < lo.l) lo = b; }
-  const key = `${hi.t}:${hi.h}|${lo.t}:${lo.l}`;
-  if (key === hlKey) return;
-  hlKey = key;
-  const ms: SeriesMarker<Time>[] = [
-    { time: hi.t as UTCTimestamp, position: 'aboveBar', shape: 'arrowDown', color: cssVar('--up'), text: `最高 ${fmtP(hi.h)}` },
-    { time: lo.t as UTCTimestamp, position: 'belowBar', shape: 'arrowUp', color: cssVar('--down'), text: `最低 ${fmtP(lo.l)}` },
-  ];
-  hlMarkers.setMarkers(ms.sort((a, b) => (a.time as number) - (b.time as number)));
-  // 箭頭文字在圖表左右邊緣會被切掉 → 另在價格軸標示最高／最低（一定看得到）
-  hiLine?.applyOptions({ price: hi.h, lineVisible: true, axisLabelVisible: true });
-  loLine?.applyOptions({ price: lo.l, lineVisible: true, axisLabelVisible: true });
-}    // 疊加線（左軸）：個股／期貨疊加權指數，選擇權疊台指期近月
+let ixOverlay: ISeriesApi<'Line'> | null = null;    // 疊加線（左軸）：個股／期貨疊加權指數，選擇權疊台指期近月
+let itools: ReturnType<typeof attachIntradayTools> | null = null;   // 查價線、最高／最低（ui/intraday.ts）
 let ixLastT = 0, ixDay = '';
 let ovFut = false;                                  // 疊加線是台指期（選擇權）而非加權
 let rangeLo = 0, rangeHi = 0, axisN = 271;          // 目前時間軸（每分鐘一個空白點）的起訖與點數
@@ -407,9 +378,7 @@ function initIntraday() {
     rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.06 } },
     // 左側：加權指數（與個股各自以參考價置中，參考價落在同一水平線，強弱一眼可比）
     leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.06 } },
-    // 內建水平線會停在滑鼠高度；改由程式畫在「滑鼠所在那分鐘的成交價」（查價線）
-    crosshair: { mode: 0, horzLine: { visible: false, labelVisible: false } },
-    localization: zhTimeOptions(true).localization,   // 十字線時間標籤：11/26 10:08
+    ...INTRADAY_CROSSHAIR,   // 內建水平線關掉，改由查價線錨定在該分鐘成交價（ui/intraday.ts）
   });
   // 圖表大小改變（含從「K 線分析」切回、原本寬度 0）→ 重新鋪滿 09:00–13:30（pitfalls #7b）
   let lastW = 0;
@@ -437,17 +406,7 @@ function initIntraday() {
     },
   });
   vwLine = ichart.addSeries(LineSeries, { color: cssVar('--accent'), lineWidth: 1, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, autoscaleInfoProvider: symmetricScale });
-  // 查價線：滑鼠移到哪一分鐘，就錨定在那一分鐘的成交價（標題為時間）
-  hoverLine = pxLine.createPriceLine({ price: 0, color: cssVar('--accent'), lineStyle: LineStyle.Dashed, lineWidth: 1, lineVisible: false, axisLabelVisible: false, title: '' });
-  ichart.subscribeCrosshairMove((e) => {
-    const b = e.time != null && e.point ? barAt(e.time as number) : undefined;
-    if (!b) { hoverLine?.applyOptions({ lineVisible: false, axisLabelVisible: false }); return; }
-    hoverLine?.applyOptions({ price: b.c, lineVisible: true, axisLabelVisible: true, title: new Date(b.t * 1000).toISOString().slice(11, 16) });
-  });
-  // 當日最高／最低價標記：出現的那一分鐘畫箭頭，價格軸上標示價位
-  hlMarkers = createSeriesMarkers(pxLine, []);
-  hiLine = pxLine.createPriceLine({ price: 0, color: 'rgba(240,82,79,.55)', lineStyle: LineStyle.Dotted, lineWidth: 1, lineVisible: false, axisLabelVisible: false, title: '最高' });
-  loLine = pxLine.createPriceLine({ price: 0, color: 'rgba(34,176,125,.55)', lineStyle: LineStyle.Dotted, lineWidth: 1, lineVisible: false, axisLabelVisible: false, title: '最低' });
+  itools = attachIntradayTools(ichart, pxLine, () => dayBars);
   ivol = ichart.addSeries(HistogramSeries, { priceScaleId: 'v', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
   ichart.priceScale('v').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 }
@@ -486,7 +445,7 @@ function setIntraday(bars: Bar[]): string {
   pv = dayBars.reduce((s, b) => s + ((b.h + b.l + b.c) / 3) * b.v, 0);
   vv = dayBars.reduce((s, b) => s + b.v, 0);
   pxLine.setData(dayBars.map((b) => ({ time: b.t as UTCTimestamp, value: b.c })));
-  hlKey = ''; updateHL();
+  itools?.update(true);
   vwLine!.setData(dayBars.map((b, i) => ({ time: b.t as UTCTimestamp, value: vw[i] })));
   ivol!.setData(dayBars.map((b) => ({ time: b.t as UTCTimestamp, value: b.v, color: b.c >= b.o ? cssVar('--up-a') : cssVar('--down-a') })));
   const ax = axis.map((t) => ({ time: t as UTCTimestamp }));
@@ -584,7 +543,7 @@ function onTick(t: Tick) {
   bar.h = Math.max(bar.h, t.price); bar.l = Math.min(bar.l, t.price); bar.c = t.price; bar.v += t.vol;
   pv += t.price * t.vol; vv += t.vol;
   pxLine.update({ time: b as UTCTimestamp, value: t.price });
-  updateHL();
+  itools?.update();
   if (vv) vwLine!.update({ time: b as UTCTimestamp, value: pv / vv });
   ivol!.update({ time: b as UTCTimestamp, value: bar.v, color: bar.c >= bar.o ? cssVar('--up-a') : cssVar('--down-a') });
 }
@@ -1123,7 +1082,7 @@ export const stocksPage: Page = {
     fchartRO?.disconnect(); fchartRO = null;
     fchart?.remove(); fchart = null; fLines = []; fAxis = null; flowTicksLen = -1;
     ichart?.remove(); kchart?.remove(); rchart?.remove();
-    ichart = kchart = rchart = null; pxLine = vwLine = axisLine = ixOverlay = null; hoverLine = null; hlMarkers = null; hlKey = ''; hiLine = loLine = null; ixDay = ''; ivol = null; candle = null; kvol = null; rsiS = null;
+    ichart = kchart = rchart = null; pxLine = vwLine = axisLine = ixOverlay = null; itools = null; ixDay = ''; ivol = null; candle = null; kvol = null; rsiS = null;
     maS = []; bbS = []; refLine = null;
   },
 };
