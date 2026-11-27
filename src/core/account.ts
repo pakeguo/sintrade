@@ -1,9 +1,9 @@
 // 帳務服務（唯讀）：期權保證金、未平倉部位、證券庫存、今日已實現損益
 //
 // - 每 15 秒向永豐查詢一次（權益數等以永豐為準）
-// - 證券庫存的未實現損益用即時行情計算，價格一動就跟著跳（使用者選「即時跳動」）
+// - 未實現損益一律直接用永豐 API 回傳值（2026-11-27 使用者改為以 API 為準）；今日損益 API 沒有提供，才用即時行情計算
 // - 期權部位的代碼格式與行情代碼不同（例：TXO20260620200C = 商品 + 年月 + 履約價 + C/P），
-//   用 mapFutPositions() 對應到實際合約後訂閱即時成交，損益也即時跳動；對應不到時用永豐回傳值
+//   用 mapFutPositions() 對應到實際合約後訂閱即時成交（Greeks、今日損益用）；未實現損益一律用永豐回傳值
 import { hub, keyOf } from './hub';
 import { type Expiry, loadTxoExpiries } from './optchain';
 import { fin, LS, normDate, tpeToday } from './util';
@@ -177,11 +177,12 @@ class AccountService {
     return hit ? { contract: hit, kind: 'fut', mult: multOf(root) } : null;
   }
 
-  /** 期權部位的即時未實現損益 */
+  /** 期權部位未實現損益：直接用永豐帳務 API 的 pnl（使用者指定以 API 為準）；API 沒給時才用即時價估算 */
   futPnl(p: Position): number {
+    if (fin(p.pnl)) return p.pnl;
     const m = this.mapped.get(p.code);
     const last = m ? hub.quotes.get(keyOf(m.contract))?.last : undefined;
-    if (!m || !fin(m.mult) || !fin(last ?? NaN) || !fin(p.price)) return p.pnl;
+    if (!m || !fin(m.mult) || !fin(last ?? NaN) || !fin(p.price)) return NaN;
     const sign = p.direction === 'Sell' ? -1 : 1;
     return sign * (last! - p.price) * p.quantity * m.mult;
   }
@@ -214,11 +215,12 @@ class AccountService {
   }
 
   /** 證券部位的即時未實現損益（張數 × 1000 股） */
+  /** 證券未實現損益：直接用永豐帳務 API 的 pnl（使用者指定以 API 為準，約 15 秒更新）；API 沒給時才用價差估算 */
   stockPnl(p: Position): number {
+    if (fin(p.pnl)) return p.pnl;
     const last = hub.quotes.get(p.code)?.last;
-    if (!fin(last ?? NaN) || !fin(p.price)) return p.pnl;
-    const sign = p.direction === 'Sell' ? -1 : 1;
-    return sign * (last! - p.price) * p.quantity * 1000;
+    if (!fin(last ?? NaN) || !fin(p.price)) return NaN;
+    return (p.direction === 'Sell' ? -1 : 1) * (last! - p.price) * p.quantity * 1000;
   }
 
   /** 證券「今日」損益：昨日已持有的部分以參考價（昨收）計，今天新買的部分以成本計（docs/ai/decisions.md） */

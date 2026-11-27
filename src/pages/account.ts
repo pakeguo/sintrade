@@ -134,7 +134,7 @@ function renderStkSummary() {
   const st = [...s.settlements].sort((a, b) => a.T - b.T);
   el.innerHTML = `<div class="ct">證券帳戶<span class="ct-r">${s.sAccount ? esc(s.sAccount.broker_id + '-' + s.sAccount.account_id) : ''}</span></div>
     <div class="cm">${s.stkPos.length ? fmt(mv) : '—'}</div>
-    <div class="kv2"><span>未實現損益</span><b class="${cls(unreal)}">${money(unreal)}</b></div>
+    <div class="kv2"><span>未實現損益<span class="tip" title="永豐帳務 API 回報的損益（約 15 秒更新一次）">?</span></span><b class="${cls(unreal)}">${money(unreal)}</b></div>
     <div class="kv2"><span>今日損益</span><b class="${cls(today)}">${money(today)}</b></div>
     ${st.length ? `<div class="settle">${st.map((x) => `<div><span>${x.T === 0 ? '今日' : `T+${x.T}`}交割</span>
       <b class="${cls(x.amount)}">${money(x.amount)}</b></div>`).join('')}</div>` : ''}`;
@@ -231,7 +231,7 @@ function renderStkPos() {
   el.innerHTML = `<div class="ct">證券庫存<span class="ct-r">${rows.length} 檔　市值 <b>${fmt(totalMv)}</b></span></div>
     ${!s.sAccount && s.ready ? '<div class="note">API Key 尚未綁定證券帳戶</div>' : rows.length ? `<div class="tbl-wrap"><table class="grid"><thead><tr>
       <th>股票</th><th class="r">張數</th><th class="r">成本</th><th class="r">現價</th><th class="r">今日漲跌</th><th class="r">今日損益</th>
-      <th class="r">市值</th><th>佔比</th><th class="r">未實現損益</th><th class="r">報酬率</th></tr></thead><tbody>
+      <th class="r">市值</th><th>佔比</th><th class="r">未實現損益<span class="tip" title="永豐帳務 API 回報的損益（約 15 秒更新一次）">?</span></th><th class="r">報酬率</th></tr></thead><tbody>
       ${rows.sort((a, b) => b.mv - a.mv).map((r) => `<tr data-code="${esc(r.p.code)}" class="link">
         <td><b>${esc(account.nameOf(r.p.code))}</b> <small class="muted">${esc(r.p.code)}</small></td>
         <td class="r">${r.p.quantity}${r.p.direction === 'Sell' ? '<small class="muted"> 券</small>' : ''}</td>

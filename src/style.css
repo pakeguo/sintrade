@@ -670,7 +670,7 @@ table.chain { width: 100%; border-collapse: collapse; }
 /* ── 下單頁（模擬）：閃電下單 ── */
 .td { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding: 10px 16px 16px; }
 /* 第一欄與下方下單窗口同寬（440px），左緣與右緣對齊 */
-.td-top { display: grid; grid-template-columns: 440px minmax(0, 1fr) minmax(0, 1.45fr); gap: 10px; }
+.td-top { display: grid; grid-template-columns: 440px minmax(0, 1fr) minmax(0, 1.38fr); gap: 10px; }
 .td-top > .card { padding: 8px 12px; min-width: 0; }
 .td-info { display: flex; flex-direction: column; gap: 6px; }
 .td-search { position: relative; }
@@ -683,9 +683,9 @@ table.chain { width: 100%; border-collapse: collapse; }
 .td-px { font-size: 24px; font-weight: 700; text-align: right; } .td-px small { font-size: 12px; margin-left: 6px; font-weight: 500; }
 .td-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .td-chips .chip2 b { font-size: 13px; }
-.td-kv { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.td-kv { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 4px; }
 .td-kv > div { display: flex; flex-direction: column; min-width: 0; }
-.td-kv span { color: var(--muted); font-size: 12px; } .td-kv b { font-size: 19px; } .td-kv small { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-kv span { color: var(--muted); font-size: 12px; white-space: nowrap; } .td-kv b { font-size: 17px; } .td-kv small { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .td-ct { width: 100%; font-size: 12px; margin-top: 4px; } .td-ct th, .td-ct td { text-align: right; padding: 3px 4px; }
 .td-main { display: grid; grid-template-columns: 440px minmax(0, 1fr); gap: 10px; min-height: 0; }
 .td-lcard { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; min-height: 0; }

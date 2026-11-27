@@ -121,7 +121,10 @@ function realHolding() {
   const avg = qty ? ps.reduce((s, p) => s + p.price * p.quantity * 1000, 0) / qty : 0;
   // 昨日庫存（yd_quantity）以前買的用一般稅率；今天新買的部分平倉可享當沖減稅（沒有這個欄位時視為昨日庫存）
   const yd = ps.reduce((s, p) => s + Math.min(p.quantity, p.yd_quantity ?? p.quantity) * 1000, 0);
-  return { qty, avg, yd, today: qty - yd };
+  // 永豐帳務 API 回報的損益（以 API 的 last_price 計算）＝基準（使用者確認 API 數字正確）
+  const apiLast = ps.find((p) => fin(p.last_price) && p.last_price > 0)?.last_price ?? NaN;
+  const apiPnl = ps.every((p) => fin(p.pnl)) && ps.length ? ps.reduce((s, p) => s + p.pnl, 0) : NaN;
+  return { qty, avg, yd, today: qty - yd, apiLast, apiPnl, anchored: fin(apiLast) && fin(apiPnl) };
 }
 const curPos = () => position(realHolding(), code);
 
@@ -137,14 +140,25 @@ function holdPnl(h: ReturnType<typeof realHolding>, P: number) {
   const tax = Math.floor(P * h.today * 0.0015) + Math.floor(P * h.yd * 0.003);
   return sell - sellFee - tax - (cost + buyFee);
 }
-/** 損益兩平價（同上公式）：精確值與可掛的價位（往上取到升降單位） */
+/**
+ * 以永豐 API 為基準的損益：API 回報值（在 API 的報價）＋ 公式算出「API 報價 → 價格 P」的變化。
+ * 價格 P 等於 API 報價時結果就是 API 的數字；API 沒有回報時才完全用公式。
+ */
+function pnlAt(h: ReturnType<typeof realHolding>, P: number) {
+  return h.anchored ? h.apiPnl + holdPnl(h, P) - holdPnl(h, h.apiLast) : holdPnl(h, P);
+}
+/** 損益兩平價（同 pnlAt）：精確值與可掛的價位（往上取到升降單位） */
 function holdBreakEven(h: ReturnType<typeof realHolding>) {
   if (!h.qty) return { exact: NaN, tick: NaN };
   const taxR = (h.today * 0.0015 + h.yd * 0.003) / h.qty;
-  const exact = (h.avg * (1 + FULL)) / (1 - FULL - taxR);
+  const exact = h.anchored
+    ? h.apiLast - h.apiPnl / (h.qty * (1 - FULL - taxR))
+    : (h.avg * (1 + FULL)) / (1 - FULL - taxR);
+  if (!fin(exact) || exact <= 0) return { exact: NaN, tick: NaN };
   let p = snap(exact, etf());
   if (p < exact - 1e-9) p = stepUp(p, etf());
-  for (let i = 0; i < 50 && holdPnl(h, p) < 0; i++) p = stepUp(p, etf());  // 捨去造成的差額再往上找
+  for (let i = 0; i < 50 && pnlAt(h, p) < 0; i++) p = stepUp(p, etf());   // 捨去造成的差額再往上找
+  for (let i = 0; i < 50 && pnlAt(h, stepDown(p, etf())) >= 0; i++) p = stepDown(p, etf());
   return { exact, tick: p };
 }
 
@@ -164,16 +178,17 @@ function renderHead() {
 function renderPos() {
   const h = realHolding();
   const last = q()?.last ?? NaN;
-  const unreal = h.qty && fin(last) ? holdPnl(h, last) : NaN;
+  // 未實現損益：API 有就直接用 API（使用者指定）；沒有才用公式估算
+  const unreal = h.anchored ? h.apiPnl : h.qty && fin(last) ? holdPnl(h, last) : NaN;
   const be = holdBreakEven(h);
   const sim = curPos();
   const simQty = sim.qty - h.qty;
-  const kv = (k: string, v: string, c = '', sub = '') => `<div><span>${k}</span><b class="${c}">${v}</b>${sub ? `<small class="muted">${sub}</small>` : ''}</div>`;
+  const kv = (k: string, v: string, c = '', sub = '') => `<div title="${sub}"><span>${k}</span><b class="${c}">${v}</b>${sub ? `<small class="muted">${sub}</small>` : ''}</div>`;
   document.getElementById('td-pos')!.innerHTML = `<div class="td-kv">
     ${kv('成交均價', h.qty ? fmtP(h.avg) : '—')}
     ${kv('持有股數', fmt(h.qty), '', h.qty ? `${fmt(h.qty / 1000, 3).replace(/\.?0+$/, '')} 張${h.today ? `・今日買 ${fmt(h.today)} 股` : ''}` : '目前沒有庫存')}
-    ${kv('當沖損益兩平價', fin(be.tick) ? fmtP(be.tick) : '—', 'accent', fin(be.exact) ? `精確 ${be.exact.toFixed(2)}・賣在此價以上不賠` : '')}
-    ${kv('未實現損益', fin(unreal) ? sign(unreal, 0) : '—', cls(unreal), '扣原價手續費與證交稅')}
+    ${kv('當沖損益兩平價', fin(be.tick) ? fmtP(be.tick) : '—', 'accent', fin(be.exact) ? `精確 ${be.exact.toFixed(2)}` : '')}
+    ${kv('未實現損益', fin(unreal) ? sign(unreal, 0) : '—', cls(unreal), h.anchored ? `永豐帳務 API（@${fmtP(h.apiLast)}）` : h.qty ? '永豐未回報，公式估算' : '')}
     ${kv('模擬（今日）', sim.traded ? sign(sim.realized, 0) : '—', cls(sim.realized), sim.traded ? `模擬部位 ${simQty >= 0 ? '' : '空 '}${fmt(Math.abs(simQty))} 股` : '沒有模擬成交')}
   </div>`;
 }
@@ -185,7 +200,7 @@ function renderCalc() {
   const el = document.getElementById('td-calc')!;
   const t = document.getElementById('td-calc-t')!;
   if (!h.qty) { t.textContent = ''; el.innerHTML = '<div class="muted">目前沒有這檔的庫存，無法試算</div>'; return; }
-  t.textContent = `庫存 ${fmt(h.qty)} 股・均價 ${fmtP(h.avg)}・手續費原價 0.1425%・稅 ${h.today ? (h.yd ? '當沖 0.15%＋現股 0.3%' : '當沖 0.15%') : '0.3%'}`;
+  t.textContent = `${h.anchored ? `以永豐回報（@${fmtP(h.apiLast)}）為基準・` : ''}庫存 ${fmt(h.qty)} 股・均價 ${fmtP(h.avg)}・費 0.1425%・稅 ${h.today ? (h.yd ? '0.15%＋0.3%' : '0.15%') : '0.3%'}`;
   if (!fin(last)) { el.innerHTML = '<div class="muted">等待成交價…</div>'; return; }
   const c = snap(last, etf());
   const up: number[] = [], dn: number[] = [];
@@ -196,7 +211,7 @@ function renderCalc() {
     .filter(([, v]) => v <= lu + 1e-6 && v >= ld - 1e-6);
   el.innerHTML = `<table class="grid td-ct"><tr><th></th>${levels.map(([k]) => `<th class="${k === '成交' ? 'accent' : k[0] === '上' ? 'up' : 'down'}">${k}</th>`).join('')}</tr>
     <tr><td class="muted">價格</td>${levels.map(([k, v]) => `<td class="${k === '成交' ? 'b' : ''}">${fmtP(v)}</td>`).join('')}</tr>
-    <tr><td class="muted">損益</td>${levels.map(([, v]) => { const r = holdPnl(h, v); return `<td class="b ${cls(r)}">${sign(r, 0)}</td>`; }).join('')}</tr></table>`;
+    <tr><td class="muted">損益</td>${levels.map(([, v]) => { const r = pnlAt(h, v); return `<td class="b ${cls(r)}">${sign(r, 0)}</td>`; }).join('')}</tr></table>`;
 }
 
 // ───────── 閃電下單：價位階梯 ─────────
