@@ -759,3 +759,4 @@ table.chain { width: 100%; border-collapse: collapse; }
 .chain td.px .op-go { visibility: hidden; padding: 0 4px; margin: 0 4px; font-size: 11px; line-height: 16px; border-radius: 4px; }
 .chain tr:hover td.px .op-go { visibility: visible; }
 .chain td.px .op-go:hover { background: var(--accent); color: #1a1405; }
+.ac-fq { font-size: 11px; margin: -2px 0 4px; }

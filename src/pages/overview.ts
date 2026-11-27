@@ -3,7 +3,7 @@
 //   右上：加權＋台指期走勢疊圖（日盤／全時切換，固定錨點時間軸）
 //   下：權值股前 10｜產業類股熱力圖
 import { ColorType, createChart, LineSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
-import { account } from '../core/account';
+import { account, F_SLOT_TEXT } from '../core/account';
 import { components } from '../core/components';
 import { hub } from '../core/hub';
 import { computeMetrics, type Expiry, loadTxoExpiries, pcrLabel, skewLabel } from '../core/optchain';
@@ -263,7 +263,7 @@ function renderAccount() {
   const m = s.margin;
   const risk = m?.risk_indicator ?? NaN;
   const riskCls = !fin(risk) || risk >= 900 ? '' : risk < 100 ? 'danger' : risk < 150 ? 'warn' : 'ok';
-  mEl.innerHTML = `<div class="ct">期貨權益與風險</div>
+  mEl.innerHTML = `<div class="ct">期貨權益與風險${s.fQueriedAt ? `<span class="ct-r muted" title="期貨商限制查詢次數：每天 ${F_SLOT_TEXT} 各查一次">${new Date(s.fQueriedAt + 8 * 3600_000).toISOString().slice(11, 16)} 資料</span>` : ''}</div>
     ${m ? `<div class="cm">${fmt(m.equity)}</div>
     <div class="kv2"><span>可用保證金</span><b>${fmt(m.available_margin)}</b></div>
     <div class="kv2"><span>維持保證金</span><b>${fmt(m.maintenance_margin)}</b></div>

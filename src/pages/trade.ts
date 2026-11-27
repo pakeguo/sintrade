@@ -193,9 +193,9 @@ function fopHolding() {
   let net = 0, cost = 0;
   for (const p of ps) { const s = p.direction === 'Sell' ? -1 : 1; net += s * p.quantity; cost += p.price * p.quantity; }
   const n = ps.reduce((a, p) => a + p.quantity, 0);
-  const apiLast = ps.find((p) => fin(p.last_price) && p.last_price > 0)?.last_price ?? NaN;
-  const apiPnl = ps.length && ps.every((p) => fin(p.pnl)) ? ps.reduce((a, p) => a + p.pnl, 0) : NaN;
-  return { net, avg: n ? cost / n : 0, apiLast, apiPnl, anchored: fin(apiLast) && fin(apiPnl) };
+  // 期權帳務只在固定時段查詢（期貨商限制），API 的損益不即時 → 不當錨點，一律用均價與現價推算
+  const gross = ps.reduce((a, p) => a + (fin(account.futPnl(p)) ? account.futPnl(p) : 0), 0);
+  return { net, avg: n ? cost / n : 0, apiLast: NaN, apiPnl: NaN, anchored: false, gross };
 }
 type FH = ReturnType<typeof fopHolding>;
 /** 以價格 P 全部平倉的淨損益：點數 × 乘數 × 口數 − 手續費（進出各一次）− 期交稅（進出各一次） */
@@ -280,12 +280,13 @@ function renderFopPos() {
   const sim = fopSim(h);
   const kv = (k: string, v: string, cl = '', sub = '') => `<div title="${sub}"><span>${k}</span><b class="${cl}">${v}</b>${sub ? `<small class="muted">${sub}</small>` : ''}</div>`;
   const last = q()?.last ?? NaN;
-  const unreal = h.anchored ? h.apiPnl : h.net && fin(last) ? fopPnl(h, last) : NaN;
+  const unreal = h.net ? h.gross : NaN;   // 同帳務頁：均價與現價推算（未扣費稅）
+  void last;
   document.getElementById('td-pos')!.innerHTML = `<div class="td-kv">
     ${kv('成交均價', h.net ? fmtP(h.avg) : '—')}
     ${kv('持有口數', h.net ? `${h.net > 0 ? '多' : '空'} ${Math.abs(h.net)}` : '0', h.net > 0 ? 'up' : h.net < 0 ? 'down' : '', h.net ? `每點 ${fopMult(c)} 元` : '目前沒有部位')}
     ${kv('損益兩平點', fin(be.tick) ? fmtP(be.tick) : '—', 'accent', fin(be.exact) ? `精確 ${be.exact.toFixed(2)}` : '')}
-    ${kv('未實現損益', fin(unreal) ? sign(unreal, 0) : '—', cls(unreal), h.anchored ? `永豐帳務 API（@${fmtP(h.apiLast)}）` : h.net ? '永豐未回報，公式估算' : '')}
+    ${kv('未實現損益', fin(unreal) ? sign(unreal, 0) : '—', cls(unreal), h.net ? '均價與現價推算（未扣費稅）' : '')}
     ${kv('模擬（今日）', sim.traded ? sign(sim.realized, 0) : '—', cls(sim.realized), sim.traded ? `模擬後 ${sim.net > 0 ? '多' : sim.net < 0 ? '空' : ''} ${Math.abs(sim.net)} 口` : `手續費 ${fopFee(c)} 元／口`)}
   </div>`;
 }
@@ -296,7 +297,7 @@ function renderFopCalc() {
   const last = q()?.last ?? NaN;
   const el = document.getElementById('td-calc')!, t = document.getElementById('td-calc-t')!;
   if (!h.net) { t.textContent = ''; el.innerHTML = '<div class="muted">目前沒有這個商品的部位，無法試算</div>'; return; }
-  t.textContent = `${h.anchored ? `以永豐回報（@${fmtP(h.apiLast)}）為基準・` : ''}${h.net > 0 ? '多' : '空'} ${Math.abs(h.net)} 口・均價 ${fmtP(h.avg)}・手續費 ${fopFee(c)}／口・期交稅 ${(fopTaxRate(c) * 100).toFixed(3).replace(/0+$/, '')}%`;
+  t.textContent = `扣手續費與期交稅・${h.net > 0 ? '多' : '空'} ${Math.abs(h.net)} 口・均價 ${fmtP(h.avg)}・手續費 ${fopFee(c)}／口・期交稅 ${(fopTaxRate(c) * 100).toFixed(3).replace(/0+$/, '')}%`;
   if (!fin(last)) { el.innerHTML = '<div class="muted">等待成交價…</div>'; return; }
   const cc = sn(last);
   const ups: number[] = [], dns: number[] = [];

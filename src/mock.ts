@@ -1,6 +1,7 @@
 // DEMO 後端：不連 shioaji server，用隨機漫步 + Black-76 產生擬真的期權行情。
 // 只用於預覽介面（網址加 ?demo=1，或連不到 server 時自動切換）。
 import { price as bsPrice, yearsToExpiry } from './bs';
+import { fGate } from './core/fgate';
 import type {
   Account, ComponentEntry, ComponentsProjection, GroupEntry,
   Backend, Bar, Contract, FutContract, Handlers, Info, OptContract, OptRoot, QuoteType, ScanRow, Snap, Tick,
@@ -291,7 +292,11 @@ export class DemoBackend implements Backend {
     ];
   }
   async portfolio<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    fGate.check(path, body);   // 與正式環境相同的期權帳務閘門（測試用來確認沒有多餘的查詢）
     const type = body.account_type;
+    // 測試用：記錄帳務查詢次數（tests 檢查期權帳務只在固定時段查詢）
+    const cnt = ((globalThis as unknown as { __pf?: Record<string, number> }).__pf ??= {});
+    cnt[`${type}:${path}`] = (cnt[`${type}:${path}`] ?? 0) + 1;
     const F = this.F;
     if (path === 'margin') {
       const fpnl = (F - 27700) * 200 * 2;

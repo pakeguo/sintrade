@@ -8,6 +8,7 @@ import type {
 
 import { isOrderUrl, OrderBlockedError } from './core/guard';
 import { normDate } from './core/util';
+import { fGate } from './core/fgate';
 
 const BASE = '/api/v1';
 
@@ -206,6 +207,7 @@ export class LiveBackend implements Backend {
   /** 帳務唯讀查詢：path 例如 'margin'、'position_unit'、'profit_loss' */
   portfolio<T>(path: string, body: Record<string, unknown>) {
     if (!/^[a-z_]+$/.test(path)) throw new Error('bad portfolio path');
+    fGate.check(path, body);   // 期權帳務只在固定時段查詢（core/fgate.ts）
     return req<T>('POST', `/portfolio/${path}`, body);
   }
 

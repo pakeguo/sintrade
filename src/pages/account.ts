@@ -4,7 +4,9 @@
 //   下：證券庫存（今日損益、市值佔比）、手續費折讓（每月，依永豐對帳單規則估算，core/fees.ts）
 //   底：已實現損益（自選期間、每日長條圖、明細）
 import { greeks, impliedVol, price as bsPrice, yearsToExpiry } from '../bs';
-import { account, type Position } from '../core/account';
+import { account, F_SLOT_TEXT, type Position } from '../core/account';
+/** 期權帳務查詢時間：11/27 08:45 */
+const fqTime = (t: number) => new Date(t + 8 * 3600_000).toISOString().slice(5, 16).replace('-', '/').replace('T', ' ');
 import { hub, keyOf } from '../core/hub';
 import { type Expiry, fair, rowsOf, synthetic } from '../core/optchain';
 import { cls, esc, fin, fmt, fmtP, sign, tpeNow, tpeToday, pointerHeld } from '../core/util';
@@ -94,6 +96,7 @@ function renderMargin() {
   const riskCls = !fin(risk) || risk >= 900 ? '' : risk < 100 ? 'danger' : risk < 150 ? 'warn' : 'ok';
   el.innerHTML = `<div class="ct">期貨權益與風險<span class="tip" title="風險指標低於 150% 黃色、低於 100% 紅色；低於 25% 期貨商會結清部位">?</span>
       <span class="ct-r">${s.fAccount ? esc(s.fAccount.broker_id + '-' + s.fAccount.account_id) : ''}</span></div>
+    ${s.fQueriedAt ? `<div class="muted ac-fq" title="期貨商限制查詢次數：每天 ${F_SLOT_TEXT} 各查一次">帳務資料時間 ${fqTime(s.fQueriedAt)}（每天 ${F_SLOT_TEXT} 更新）</div>` : ''}
     ${m ? `<div class="cm">${fmt(m.equity)}</div>
       <div class="kv2"><span>風險指標</span><b class="risk ${riskCls}">${fin(risk) && risk < 900 ? risk.toFixed(0) + '%' : '無部位'}</b></div>
       <div class="kv2"><span>可用保證金</span><b>${fmt(m.available_margin)}</b></div>
@@ -312,8 +315,8 @@ async function loadRealized() {
     const win = days.filter((d) => d[1] > 0).length;
     const mx = Math.max(1, ...days.map((d) => Math.abs(d[1])));
     el.innerHTML = `<div class="rl-sum">
-        <div><span>合計</span><b class="${cls(sumF + sumS)}">${money(sumF + sumS)}</b></div>
-        <div><span>期權</span><b class="${cls(sumF)}">${money(sumF)}</b></div>
+        <div><span>合計（證券）</span><b class="${cls(sumF + sumS)}">${money(sumF + sumS)}</b></div>
+        <div><span>期權<span class="tip" title="期貨商限制查詢次數：期權帳務只在每天 ${F_SLOT_TEXT} 查詢，自選期間的期權已實現損益不再查詢。今日期權已實現見總覽「今日損益」">?</span></span><b class="muted">暫停查詢</b></div>
         <div><span>證券</span><b class="${cls(sumS)}">${money(sumS)}</b></div>
         <div><span>獲利天數</span><b>${win} / ${days.length}</b></div>
       </div>
