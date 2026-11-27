@@ -4,6 +4,7 @@ import {
   type IChartApi, type ISeriesApi, type IPriceLine, type UTCTimestamp,
 } from 'lightweight-charts';
 import { yearsToExpiry } from '../bs';
+import { openTrade } from '../core/nav';
 import { hub, keyOf } from '../core/hub';
 import {
   computeMetrics, type Expiry, fair, loadTxoExpiries, type Metrics, pcrLabel, type Row, rowsOf, skewLabel,
@@ -234,7 +235,7 @@ function renderChain(m: Metrics) {
         `<td class="iv">${fin(iv) ? (iv * 100).toFixed(1) : '—'}</td>`,
         `<td class="dl">${fin(d) ? d.toFixed(2) : '—'}</td>`,
         `<td class="chg ${cls(ch)}">${sign(ch, Math.abs(ch) < 10 && ch % 1 ? 1 : 0)}</td>`,
-        `<td class="px ${cls(ch)}${fl}${sel === o.code ? ' sel' : ''}" data-code="${o.code}">${fmtP(last)}</td>`,
+        `<td class="px ${cls(ch)}${fl}${sel === o.code ? ' sel' : ''}" data-code="${o.code}">${right === 'P' ? '' : goBtn(o.code)}${fmtP(last)}${right === 'P' ? goBtn(o.code) : ''}</td>`,
       ];
       return (right === 'C' ? cells : cells.reverse()).join('');
     };
@@ -248,6 +249,9 @@ function renderChain(m: Metrics) {
   if (!markerDone && fin(m.F)) html += fline(m.F);
   body.innerHTML = html;
 }
+
+/** 價格旁的「⚡」：帶這個選擇權到下單頁（模擬），滑鼠移到該列才顯示 */
+const goBtn = (code: string) => `<button class="op-go" data-trade="${code}" title="到下單頁（模擬）">⚡</button>`;
 
 const fline = (F: number) => {
   const n = compactMq.matches ? 3 : 5;
@@ -436,6 +440,8 @@ function bind() {
     if (e && e !== cur) selectExpiry(e);
   });
   $('chain-body').addEventListener('click', (ev) => {
+    const go = (ev.target as HTMLElement).closest<HTMLElement>('[data-trade]')?.dataset.trade;
+    if (go) { const o = cur?.list.find((x) => x.code === go); if (o) openTrade(o); return; }
     const td = (ev.target as HTMLElement).closest('tr')?.querySelector<HTMLElement>(
       `td.px[data-side="${(ev.target as HTMLElement).closest<HTMLElement>('td')?.dataset.side ?? 'C'}"]`);
     const code = td?.dataset.code;

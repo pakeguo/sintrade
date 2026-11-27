@@ -71,6 +71,15 @@ async function dbl(p, sel) {
   res.mktBuy = await p.$eval('#td-msg', (e) => e.textContent);
   await p.click('.td-mkt button[data-k="S"]'); await p.waitForTimeout(800);
   res.mktSell = await p.$eval('#td-msg', (e) => e.textContent);
+  // 期貨：條件切成 自動／新倉／平倉、單位口；平倉買進（沒有空單）要擋
+  await p.goto('http://localhost:5173/?demo=1#/trade/TXFL6'); await p.waitForTimeout(5000);
+  res.fopCond = await p.$$eval('#td-cond button', (e) => e.map((x) => x.textContent).join(''));
+  res.fopUnit = await p.$eval('#td-unit', (e) => e.textContent);
+  await p.click('#td-cond button[data-c="close"]'); await p.fill('#td-n', '1'); await p.dispatchEvent('#td-n', 'input');
+  await dbl(p, '.td-row:nth-child(3) .td-bv'); await p.waitForTimeout(600);
+  res.fopClose = await p.$eval('#td-msg', (e) => e.textContent);
+  await p.click('#td-cond button[data-c="auto"]');
+  await p.goto('http://localhost:5173/?demo=1#/trade/2330'); await p.waitForTimeout(4000);
   res.width = await p.evaluate(() => [document.querySelector('.td-info').getBoundingClientRect(), document.querySelector('.td-lcard').getBoundingClientRect()]
     .map((r) => `${Math.round(r.x)}+${Math.round(r.width)}`));
   res.layout = await p.evaluate(() => ({ pageH: document.documentElement.scrollHeight, ladderRows: document.querySelectorAll('.td-row').length }));
@@ -87,6 +96,7 @@ async function dbl(p, sel) {
   if (!/升降單位/.test(res.badTick)) fail.push('tick');
   if (!/市價.*已成交/.test(res.mktBuy) || !/市價.*已成交/.test(res.mktSell)) fail.push('market');
   if (res.width[0] !== res.width[1]) fail.push('width');
+  if (res.fopCond !== '自動新倉平倉' || res.fopUnit !== '口' || !/平倉口數超過/.test(res.fopClose)) fail.push('fop');
   console.log(fail.length ? '✖ FAIL ' + fail.join(',') : '✓ PASS');
   if (fail.length) process.exitCode = 1;
   await b.close();

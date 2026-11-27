@@ -8,10 +8,11 @@
 import { FEE } from './fees';
 import { LS, tpeToday } from './util';
 
-export type Cond = 'cash' | 'dt' | 'odd';     // 現股、現股當沖、零股
+export type Cond = 'cash' | 'dt' | 'odd' | 'auto' | 'open' | 'close';  // 個股：現股、現股當沖、零股；期權：自動、新倉、平倉
 export type Side = 'B' | 'S';
 export type Tif = 'ROD' | 'IOC';
-export const COND_NAME: Record<Cond, string> = { cash: '現股', dt: '現股當沖', odd: '零股' };
+export const COND_NAME: Record<Cond, string> = { cash: '現股', dt: '現股當沖', odd: '零股', auto: '自動', open: '新倉', close: '平倉' };
+export const isFopCond = (c: Cond) => c === 'auto' || c === 'open' || c === 'close';
 
 export interface SimFill { at: number; price: number; qty: number }
 export interface SimOrder {
@@ -95,13 +96,13 @@ class SimBook {
     o.filled += q;
     if (o.filled >= o.qty) o.status = 'filled';
   }
-  /** 即時成交：掛單價被觸及就成交（vol 為張，零股以股計） */
-  onTick(code: string, price: number, volLots: number) {
+  /** 即時成交：掛單價被觸及就成交（個股 vol 為張、委託以股計；期權 unit=1，都是口） */
+  onTick(code: string, price: number, volLots: number, unit = 1000) {
     let changed = false;
     for (const o of this.working(code)) {
       const hit = o.side === 'B' ? price <= o.price : price >= o.price;
       if (!hit) continue;
-      this.fill(o, o.price, Math.max(1, Math.round(volLots * 1000)));
+      this.fill(o, o.price, Math.max(1, Math.round(volLots * unit)));   // 個股：張→股；期權：口
       changed = true;
     }
     if (changed) this.save();

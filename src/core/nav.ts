@@ -6,6 +6,15 @@ import type { Contract, FutContract, OptContract } from '../types';
 
 export const known = new Map<string, Contract>();
 
+/** 代碼猜商品類別：數字開頭＝股票、三碼＋月份碼＋年＝期貨（TXFL6）、其餘＝選擇權 */
+export const guessType = (c: string) => (/^\d/.test(c) ? 'STK' : /^[A-Z]{3}[A-L]\d$/.test(c) ? 'FUT' : 'OPT') as Contract['security_type'];
+
+/** 帶商品到下單頁（模擬） */
+export function openTrade(c: Contract) {
+  known.set(c.code, c);
+  location.hash = `#/trade/${c.code}`;
+}
+
 export function openTA(c: Contract) {
   known.set(c.code, c);
   LS.set('stkMode', c.security_type === 'STK' ? 'k' : 'live');

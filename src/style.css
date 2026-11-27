@@ -755,3 +755,7 @@ table.chain { width: 100%; border-collapse: collapse; }
 .ta-tip-h { color: var(--muted); margin-bottom: 3px; }
 .ta-tip > div:not(.ta-tip-h) { display: flex; justify-content: space-between; gap: 14px; line-height: 1.5; }
 .ta-tip span { color: var(--muted); } .ta-tip b { font-weight: 600; }
+/* 期權頁 T 字報價：價格旁的「到下單頁」按鈕，滑鼠移到該列才出現 */
+.chain td.px .op-go { visibility: hidden; padding: 0 4px; margin: 0 4px; font-size: 11px; line-height: 16px; border-radius: 4px; }
+.chain tr:hover td.px .op-go { visibility: visible; }
+.chain td.px .op-go:hover { background: var(--accent); color: #1a1405; }
