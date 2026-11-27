@@ -9,6 +9,7 @@ import {
 } from 'lightweight-charts';
 import { findInd, INDICATORS, type Line } from '../core/ta';
 import { cls, cssVar, esc, fin, fmt, fmtP, LS, sign } from '../core/util';
+import { zhTimeOptions } from './chartfmt';
 import type { Bar } from '../types';
 
 interface Pick { id: string; params: number[] }
@@ -29,7 +30,6 @@ export class TAView {
   private vol: ISeriesApi<'Histogram'> | null = null;
   private bars: Bar[] = [];
   private minute = false;
-  private ro: ResizeObserver;
   private lines: Line[][] = [[], [], []];        // 各圖的指標線（圖例與十字線同步用）
   private idxOf = new Map<number, number>();     // K 棒時間 → 索引
   private syncing = false;
@@ -48,11 +48,6 @@ export class TAView {
         <div class="ta-pane"><div class="ta-lgd" id="ta-l1"></div><div class="ta-c" id="ta-c1"></div></div>
         <div class="ta-pane"><div class="ta-lgd" id="ta-l2"></div><div class="ta-c" id="ta-c2"></div></div>
       </div>`;
-    this.ro = new ResizeObserver(() => this.panes.forEach((p, i) => {
-      const el = host.querySelector<HTMLElement>(`#ta-c${i}`);
-      if (el && el.clientWidth) p.chart.resize(el.clientWidth, el.clientHeight);
-    }));
-    this.ro.observe(host);
     this.renderSum();
   }
 
@@ -74,13 +69,16 @@ export class TAView {
   /** 往前補資料：refit=true 時回到最近 120 根（使用者還沒拖曳縮放過） */
   extend(bars: Bar[], refit: boolean) { this.bars = bars; this.fill(refit); }
 
-  private opts(el: HTMLElement, sub: boolean) {
+  private opts(sub: boolean) {
+    const zh = zhTimeOptions(this.minute);
     return {
-      width: el.clientWidth, height: el.clientHeight,
+      // 自動跟著容器大小（圖例換行時容器會變矮；固定尺寸會讓底部日期被切掉，pitfalls #29）
+      autoSize: true,
+      localization: zh.localization,
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--muted'), fontSize: 11, attributionLogo: false },
       grid: { vertLines: { color: cssVar('--grid') }, horzLines: { color: cssVar('--grid') } },
       rightPriceScale: { borderVisible: false, minimumWidth: 72 },
-      timeScale: { borderVisible: false, timeVisible: this.minute, secondsVisible: false },
+      timeScale: { borderVisible: false, timeVisible: this.minute, secondsVisible: false, tickMarkFormatter: zh.timeScale.tickMarkFormatter },
       // 主圖：內建水平線關掉，改由程式在「收盤價」畫一條查價線（Magnet 會吸到最近的均線，不一定是收盤價）
       crosshair: sub ? { mode: CrosshairMode.Normal } : { mode: CrosshairMode.Normal, horzLine: { visible: false, labelVisible: false } },
       ...(sub ? { handleScroll: false, handleScale: false } : {}),
@@ -102,7 +100,7 @@ export class TAView {
     const probe = this.bars.length ? this.bars : [{ t: 0, o: 1, h: 1, l: 1, c: 1, v: 0 }];
 
     const el0 = this.host.querySelector<HTMLElement>('#ta-c0')!;
-    const main = createChart(el0, this.opts(el0, false));
+    const main = createChart(el0, this.opts(false));
     this.candle = main.addSeries(CandlestickSeries, { upColor: up, downColor: dn, borderVisible: false, wickUpColor: up, wickDownColor: dn });
     this.closeLine = this.candle.createPriceLine({ price: 0, color: cssVar('--accent'), lineStyle: LineStyle.Dashed, lineWidth: 1,
       lineVisible: false, axisLabelVisible: false, title: '收' });
@@ -114,7 +112,7 @@ export class TAView {
 
     for (const i of [0, 1]) {
       const el = this.host.querySelector<HTMLElement>(`#ta-c${i + 1}`)!;
-      const ch = createChart(el, this.opts(el, true));
+      const ch = createChart(el, this.opts(true));
       const p = this.cfg.sub[i], d = findInd(p.id);
       const ss = d ? d.calc(probe, paramsOf(p)).map((l) => mk(ch, l)) : [];
       for (const lv of d?.levels ?? []) ss[0]?.createPriceLine({ price: lv, color: 'rgba(139,149,163,.5)', lineStyle: LineStyle.Dashed, lineWidth: 1, title: '' });
@@ -313,7 +311,6 @@ export class TAView {
   destroy() {
     this.hideTip();
     this.closeModal();
-    this.ro.disconnect();
     this.panes.forEach((p) => p.chart.remove());
     this.panes = [];
   }

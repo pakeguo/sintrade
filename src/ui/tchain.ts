@@ -3,7 +3,7 @@
 import { hub } from '../core/hub';
 import { openTA } from '../core/nav';
 import { computeMetrics, type Expiry, loadTxoExpiries, pcrLabel, type Row, rowsOf, synthetic } from '../core/optchain';
-import { cls, esc, fin, fmt, fmtP, fmtVol, isLive, LS, sign, pointerHeld } from '../core/util';
+import { cls, esc, fin, fmt, fmtP, fmtVol, isLive, LS, scrollRowToCenter, sign, pointerHeld } from '../core/util';
 import { yearsToExpiry } from '../bs';
 import type { OptContract } from '../types';
 
@@ -94,8 +94,10 @@ export class TChain {
 
   private rows(): Row[] { return this.cur ? rowsOf(this.cur) : []; }
 
+  private pendingScroll = false;  // 按「置中」後，下一次重畫要把價平列捲到中間
   private recenter(force: boolean) {
     if (!this.cur) return;
+    if (force) { this.pendingScroll = true; this.dirty = true; }
     const all = this.rows();
     const F = synthetic(all);
     if (!all.length || !fin(F)) return;
@@ -167,6 +169,11 @@ export class TChain {
     }
     if (!marker && fin(m.F)) html += fl();
     this.host.querySelector('#tc-body')!.innerHTML = html || '<tr><td colspan="7" class="empty">載入中…</td></tr>';
+    if (this.pendingScroll && html) {
+      this.pendingScroll = false;
+      const wrap = this.host.querySelector('.tc-wrap');
+      scrollRowToCenter(wrap, wrap?.querySelector('tr.atm') ?? wrap?.querySelector('tr.fline') ?? null);
+    }
   }
 
   destroy() {

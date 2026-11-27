@@ -10,7 +10,7 @@ import {
   synthetic as synthetic0,
 } from '../core/optchain';
 import {
-  $, avg, cls, compactMq, cssVar, esc, errText, fin, fmt, fmtP, fmtVol, isLive, LS, retry, session, sign, tpeToday, pointerHeld } from '../core/util';
+  $, avg, cls, compactMq, cssVar, esc, errText, fin, fmt, fmtP, fmtVol, isLive, LS, retry, scrollRowToCenter, session, sign, tpeToday, pointerHeld } from '../core/util';
 import type { Bar, Contract, OptContract, Tick } from '../types';
 import type { Page } from './page';
 
@@ -103,8 +103,10 @@ async function setVisible(next: OptContract[]) {
 }
 
 /** 以價平為中心挑出上下各 range 檔 */
+let pendingScroll = false;   // 按「置中」後，下一次重畫要把價平列捲到表格中間
 async function recenter(force = false) {
   if (!cur) return;
+  if (force) { pendingScroll = true; dirty = true; }
   const F = synthetic();
   const all = rows();
   if (!all.length || !fin(F)) return;
@@ -382,6 +384,11 @@ function frame() {
     const m = metrics();
     renderCards(m);
     renderChain(m);
+    if (pendingScroll) {
+      pendingScroll = false;
+      const wrap = document.querySelector('.chain-wrap');
+      scrollRowToCenter(wrap, wrap?.querySelector('tr.atm') ?? wrap?.querySelector('tr.fline') ?? null);
+    }
     renderDetail(m);
     if (now - lastRecenter > 3000) { lastRecenter = now; recenter(); }
   }

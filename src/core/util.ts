@@ -109,3 +109,11 @@ export function normDate(x: unknown): string {
   if (m) return `${+m[1] + 1911}-${m[2]}-${m[3]}`;
   return s.slice(0, 10);
 }
+
+/** 把捲動容器內的某一列捲到容器正中間（T 字報價「置中」用；只捲容器，不動整頁） */
+export function scrollRowToCenter(wrap: Element | null, row: Element | null, smooth = true) {
+  if (!wrap || !row) return;
+  const w = wrap.getBoundingClientRect(), r = row.getBoundingClientRect();
+  const top = wrap.scrollTop + (r.top - w.top) - (wrap.clientHeight - r.height) / 2;
+  wrap.scrollTo({ top: Math.max(0, top), behavior: smooth ? 'smooth' : 'auto' });
+}

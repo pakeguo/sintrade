@@ -19,6 +19,7 @@ import type { Bar, Contract, Info, Tick } from '../types';
 import type { Page } from './page';
 import { applyTick, buildBars, INTERVALS, isMinute, labelOf, type Interval } from '../core/bars';
 import { TAView } from '../ui/taview';
+import { zhTimeOptions } from '../ui/chartfmt';
 import { TIER, TIER_COLOR, tierOf } from '../core/flow';
 import { limitZoom, resetZoom } from '../ui/zoom';
 
@@ -557,7 +558,9 @@ let vpBars: Bar[] = [];
 const MA = [[5, '#f5b94a'], [10, '#8fb3ff'], [20, '#d17cff'], [60, '#5fd3c6'], [120, '#ff8a65'], [240, '#c9d1d9']] as const;
 
 function initK() {
-  kchart = createChart(document.getElementById('kchart')!, { ...chartOpts(), timeScale: { borderVisible: false, timeVisible: false } });
+  const zh = zhTimeOptions(false);
+  kchart = createChart(document.getElementById('kchart')!, { ...chartOpts(), localization: zh.localization,
+    timeScale: { borderVisible: false, timeVisible: false, tickMarkFormatter: zh.timeScale.tickMarkFormatter } });
   candle = kchart.addSeries(CandlestickSeries, {
     upColor: cssVar('--up'), downColor: cssVar('--down'), borderVisible: false, wickUpColor: cssVar('--up'), wickDownColor: cssVar('--down'),
   });
@@ -599,7 +602,8 @@ async function loadK() {
   const seq = loadSeq, my = ++kSeq, iv = kunit;
   const alive = () => seq === loadSeq && my === kSeq && mounted && mode === 'k' && !!kchart;
   document.getElementById('kinfo')!.textContent = `載入 ${labelOf(iv)}…`;
-  kchart.applyOptions({ timeScale: { timeVisible: isMinute(iv) } });
+  const zh = zhTimeOptions(isMinute(iv));
+  kchart.applyOptions({ localization: zh.localization, timeScale: { timeVisible: isMinute(iv), tickMarkFormatter: zh.timeScale.tickMarkFormatter } });
   let got = false;
   kUserMoved = false;
   await buildBars(contract, iv, (r) => {
